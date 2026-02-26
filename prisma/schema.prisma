@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ADMIN
+// ============================================================================
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("admins")
+}
+
+// ============================================================================
+// CLIENT (Multi-tenant: each client is a separate business)
+// ============================================================================
+model Client {
+  id              String    @id @default(cuid())
+  clientId        String    @unique @map("client_id") // 4-digit unique ID for URLs
+  companyName     String    @map("company_name")
+  contactPerson   String    @map("contact_person")
+  phone           String
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  stripeAccountId String?   @map("stripe_account_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  deletedAt       DateTime? @map("deleted_at") // Soft delete
+
+  items         Item[]
+  qrCodes       QRCode[]
+  orders        Order[]
+  staffSettings StaffSettings?
+
+  @@map("clients")
+}
+
+// ============================================================================
+// STAFF SETTINGS
+// ============================================================================
+model StaffSettings {
+  id               String   @id @default(cuid())
+  clientId         String   @unique @map("client_id")
+  staffToken       String   @unique @map("staff_token") // Cryptographically random 24-char token for URL
+  staffPasswordHash String  @map("staff_password_hash") // bcrypt hashed password
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("staff_settings")
+}
+
+// ============================================================================
+// MENU ITEMS
+// ============================================================================
+model Item {
+  id          String    @id @default(cuid())
+  itemId      String    @map("item_id") // 3-digit unique per client
+  clientId    String    @map("client_id")
+  name        String
+  price       Decimal   @db.Decimal(10, 2)
+  description String?
+  category    String
+  active      Boolean   @default(true) // Out of stock toggle
+  hidden      Boolean   @default(false) // Hidden from menu
+  createdAt   DateTime  @default(now()) @map("created_at")
+  deletedAt   DateTime? @map("deleted_at") // Soft delete
+
+  client         Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  customizations ItemCustomization[]
+  orderItems     OrderItem[]
+
+  @@unique([clientId, itemId])
+  @@map("items")
+}
+
+enum CustomizationAction {
+  ADD
+  CHANGE
+  REMOVE
+  CHOOSE // Optional single-select (radio, not required)
+}
+
+model ItemCustomization {
+  id     String              @id @default(cuid())
+  itemId String              @map("item_id")
+  name   String
+  price  Decimal             @db.Decimal(10, 2)
+  action CustomizationAction @default(ADD)
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("item_customizations")
+}
+
+// ============================================================================
+// QR CODES
+// ============================================================================
+model QRCode {
+  id              String    @id @default(cuid())
+  clientId        String    @map("client_id")
+  tableIdentifier String    @map("table_identifier") // alphanumeric like A1, B2
+  createdAt       DateTime  @default(now()) @map("created_at")
+  deletedAt       DateTime? @map("deleted_at") // Soft delete
+
+  // Rate limiting fields
+  ordersThisHour     Int       @default(0) @map("orders_this_hour")
+  hourResetAt        DateTime  @default(now()) @map("hour_reset_at")
+  lastOrderAt        DateTime? @map("last_order_at")
+  pendingOrdersCount Int       @default(0) @map("pending_orders_count")
+
+  client Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@unique([clientId, tableIdentifier])
+  @@map("qr_codes")
+}
+
+// ============================================================================
+// ORDERS
+// ============================================================================
+enum OrderStatus {
+  NEW
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  clientId        String      @map("client_id")
+  qrCodeId        String      @map("qr_code_id")
+  displayCode     String      @map("display_code") // Human-readable: "0042-A15-0023"
+  dailySequence   Int         @map("daily_sequence") // Resets daily per client
+  sequenceDate    DateTime    @map("sequence_date") @db.Date
+  status          OrderStatus @default(NEW)
+  total           Decimal     @db.Decimal(10, 2)
+  stripePaymentId String?     @map("stripe_payment_id")
+  customerNote    String?     @map("customer_note") @db.VarChar(500)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  preparedAt      DateTime?   @map("prepared_at")
+  doneAt          DateTime?   @map("done_at")
+  archivedAt      DateTime?   @map("archived_at")
+
+  client Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  qrCode QRCode      @relation(fields: [qrCodeId], references: [id])
+  items  OrderItem[]
+
+  @@unique([clientId, sequenceDate, dailySequence])
+  @@index([clientId, status])
+  @@index([qrCodeId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  orderId        String  @map("order_id")
+  itemId         String  @map("item_id")
+  quantity       Int
+  customizations Json? // Store selected customizations as JSON
+  subtotal       Decimal @db.Decimal(10, 2)
+
+  // Snapshot fields - preserve item details at time of order
+  itemNameSnapshot  String  @map("item_name_snapshot")
+  itemPriceSnapshot Decimal @map("item_price_snapshot") @db.Decimal(10, 2)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item  Item  @relation(fields: [itemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ============================================================================
+// LOGIN ATTEMPTS (Rate Limiting)
+// ============================================================================
+model LoginAttempt {
+  id          String   @id @default(cuid())
+  email       String // Can be email or staff token identifier
+  attemptedAt DateTime @default(now()) @map("attempted_at")
+  success     Boolean
+
+  @@index([email, attemptedAt])
+  @@map("login_attempts")
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+}
+
+enum AuditEntityType {
+  ADMIN
+  CLIENT
+  ITEM
+  ORDER
+  QR_CODE
+  STAFF_SETTINGS
+}
+
+model AuditLog {
+  id         String          @id @default(cuid())
+  timestamp  DateTime        @default(now())
+  clientId   String?         @map("client_id") // null for admin actions
+  actorType  String          @map("actor_type") // ADMIN | CLIENT | STAFF
+  actorId    String          @map("actor_id") // User's id
+  actorEmail String?         @map("actor_email") // For display purposes
+  action     AuditAction
+  entityType AuditEntityType @map("entity_type")
+  entityId   String?         @map("entity_id") // ID of affected record
+  details    Json? // Old and new values for updates
+  ipAddress  String?         @map("ip_address")
+
+  @@index([clientId, timestamp])
+  @@index([actorId, timestamp])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
