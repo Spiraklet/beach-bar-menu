@@ -38,9 +38,9 @@ Before we begin, make sure you have these things ready. Don't skip this — it w
 
 ### Things you need
 
-- [ ] Your code is working locally (you can run `npm run dev` and see the app at `http://localhost:3000`)
-- [ ] You have a GitHub account and your project is pushed there
-- [ ] You have a web browser open (Chrome or Firefox recommended)
+- [x] Your code is working locally (you can run `npm run dev` and see the app at `http://localhost:3000`)
+- [x] You have a GitHub account and your project is pushed there
+- [x] You have a web browser open (Chrome or Firefox recommended)
 
 ### Accounts you will create during this guide
 
