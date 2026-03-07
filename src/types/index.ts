@@ -81,6 +81,7 @@ export interface OrderItem {
   quantity: number
   customizations: SelectedCustomization[] | null
   subtotal: Decimal | number | string
+  note?: string | null
   item?: Item
 }
 
