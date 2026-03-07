@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
 import type { CreateOrderInput } from '@/types'
@@ -122,11 +123,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Fetch all items to calculate totals
+    // Fetch all items to calculate totals (deduplicate IDs for the query)
     const itemIds = items.map((i) => i.itemId)
+    const uniqueItemIds = [...new Set(itemIds)]
     const menuItems = await prisma.item.findMany({
       where: {
-        id: { in: itemIds },
+        id: { in: uniqueItemIds },
         clientId: client.id,
         active: true,
       },
@@ -135,7 +137,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    if (menuItems.length !== itemIds.length) {
+    if (menuItems.length !== uniqueItemIds.length) {
       return NextResponse.json(
         { success: false, error: 'Some items are no longer available' },
         { status: 400 }
@@ -164,16 +166,18 @@ export async function POST(request: NextRequest) {
           ? JSON.parse(JSON.stringify(orderItem.customizations))
           : undefined,
         subtotal: itemSubtotal,
+        note: orderItem.note || null,
         // Snapshot fields - preserve item details at time of order
         itemNameSnapshot: menuItem.name,
         itemPriceSnapshot: Number(menuItem.price),
       }
     })
 
-    // Generate display code
+    // Generate display code and secure view token
     const { dailySequence, sequenceDate, displayCode } = await generateOrderDisplayCode(client.id, client.clientId, tableId)
+    const viewToken = randomBytes(16).toString('hex')
 
-    // Create order
+    // Create order (without viewToken in Prisma data — set via raw SQL below for reliability)
     const order = await prisma.order.create({
       data: {
         client: { connect: { id: client.id } },
@@ -197,7 +201,17 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, data: order }, { status: 201 })
+    // Set view_token via raw SQL — guarantees it is stored regardless of Prisma client version
+    await prisma.$executeRaw`UPDATE orders SET view_token = ${viewToken} WHERE id = ${order.id}`
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...order,
+        orderNumber: order.displayCode,
+        viewToken, // use the pre-generated variable, never order.viewToken (may be null on old clients)
+      },
+    }, { status: 201 })
   } catch (error) {
     console.error('Create order error:', error)
     return NextResponse.json(
