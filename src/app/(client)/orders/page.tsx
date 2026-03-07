@@ -288,6 +288,9 @@ export default function OrdersPage() {
                       {orderItem.customizations.map((c) => c.name).join(', ')}
                     </p>
                   )}
+                  {orderItem.note && (
+                    <p className="text-xs text-amber-600 mt-1 italic">📝 {orderItem.note}</p>
+                  )}
                 </div>
               ))}
             </div>

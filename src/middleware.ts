@@ -118,6 +118,12 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(response)
   }
 
+  // Customer order view page (secured by token in URL)
+  if (pathname.startsWith('/order/')) {
+    const response = NextResponse.next()
+    return addSecurityHeaders(response)
+  }
+
   // API routes for customer ordering
   if (pathname.startsWith('/api/orders') && request.method === 'POST') {
     const response = NextResponse.next()
@@ -125,6 +131,11 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith('/api/menu')) {
+    const response = NextResponse.next()
+    return addSecurityHeaders(response)
+  }
+
+  if (pathname.startsWith('/api/order/')) {
     const response = NextResponse.next()
     return addSecurityHeaders(response)
   }

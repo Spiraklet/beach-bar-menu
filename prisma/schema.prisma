@@ -146,6 +146,8 @@ model Order {
   total           Decimal     @db.Decimal(10, 2)
   stripePaymentId String?     @map("stripe_payment_id")
   customerNote    String?     @map("customer_note") @db.VarChar(500)
+  viewToken       String?     @unique @map("view_token")
+  customerEmail   String?     @map("customer_email") @db.VarChar(255)
   createdAt       DateTime    @default(now()) @map("created_at")
   preparedAt      DateTime?   @map("prepared_at")
   doneAt          DateTime?   @map("done_at")
@@ -168,6 +170,7 @@ model OrderItem {
   quantity       Int
   customizations Json? // Store selected customizations as JSON
   subtotal       Decimal @db.Decimal(10, 2)
+  note           String? @db.VarChar(200)
 
   // Snapshot fields - preserve item details at time of order
   itemNameSnapshot  String  @map("item_name_snapshot")

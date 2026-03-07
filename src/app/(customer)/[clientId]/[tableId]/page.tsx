@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Button, Modal, Toast, ToastType } from '@/components/ui'
 import { formatPrice, groupBy } from '@/lib/utils'
 import type { Item, CartItem, SelectedCustomization } from '@/types'
@@ -22,6 +22,7 @@ const translations = {
     placeOrder: 'Place Order',
     orderSuccess: 'Order placed successfully!',
     customize: 'Customize',
+    itemNote: 'Note for this item',
     noItems: 'No items available',
     notAvailable: 'Not Available',
     emptyCart: 'Your cart is empty',
@@ -56,6 +57,7 @@ const translations = {
     placeOrder: 'Καταχώρηση',
     orderSuccess: 'Η παραγγελία καταχωρήθηκε!',
     customize: 'Επιλογές',
+    itemNote: 'Σημείωση για αυτό το προϊόν',
     noItems: 'Δεν υπάρχουν προϊόντα',
     notAvailable: 'Μη Διαθέσιμο',
     emptyCart: 'Το καλάθι είναι άδειο',
@@ -81,6 +83,7 @@ const translations = {
 
 export default function CustomerMenuPage() {
   const params = useParams()
+  const router = useRouter()
   const clientId = params.clientId as string
   const tableId = params.tableId as string
 
@@ -216,6 +219,31 @@ export default function CustomerMenuPage() {
     setCart((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const updateCartItemQuantity = (index: number, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      removeFromCart(index)
+      return
+    }
+    setCart((prev) =>
+      prev.map((cartItem, i) => {
+        if (i !== index) return cartItem
+        const basePrice = Number(cartItem.item.price)
+        const customizationPrice = cartItem.selectedCustomizations.reduce((sum, c) => sum + c.price, 0)
+        return {
+          ...cartItem,
+          quantity: newQuantity,
+          subtotal: (basePrice + customizationPrice) * newQuantity,
+        }
+      })
+    )
+  }
+
+  const updateCartItemNote = (index: number, note: string) => {
+    setCart((prev) =>
+      prev.map((cartItem, i) => (i === index ? { ...cartItem, note } : cartItem))
+    )
+  }
+
   const submitOrder = async () => {
     if (cart.length === 0) return
 
@@ -232,6 +260,7 @@ export default function CustomerMenuPage() {
             itemId: cartItem.item.id,
             quantity: cartItem.quantity,
             customizations: cartItem.selectedCustomizations,
+            note: cartItem.note || undefined,
           })),
           customerNote: orderNote || null,
         }),
@@ -240,11 +269,16 @@ export default function CustomerMenuPage() {
       const data = await response.json()
 
       if (data.success) {
-        setOrderSuccess(true)
-        setOrderNumber(data.data.orderNumber)
         setCart([])
         setOrderNote('')
         setIsCheckoutOpen(false)
+        // Redirect to secure order view page
+        if (data.data.viewToken) {
+          router.push(`/order/${data.data.viewToken}`)
+        } else {
+          setOrderSuccess(true)
+          setOrderNumber(data.data.orderNumber)
+        }
       } else {
         setToast({ message: data.error || 'Order failed', type: 'error' })
       }
@@ -379,11 +413,6 @@ export default function CustomerMenuPage() {
                           {item.description && (
                             <p className="text-sm text-gray-500 mt-1 line-clamp-2">
                               {item.description}
-                            </p>
-                          )}
-                          {item.customizations && item.customizations.length > 0 && item.active && (
-                            <p className="text-xs text-primary-600 mt-2">
-                              {item.customizations.length} {t.customize.toLowerCase()}
                             </p>
                           )}
                         </div>
@@ -785,20 +814,64 @@ export default function CustomerMenuPage() {
         size="md"
       >
         <div className="space-y-4">
-          {/* Order Summary */}
-          <div className="bg-gray-50 rounded-lg p-4">
+          {/* Editable Order Summary */}
+          <div className="space-y-3">
             {cart.map((cartItem, index) => (
-              <div key={index} className="flex justify-between py-2">
-                <span>
-                  {cartItem.quantity}x {cartItem.item.name}
-                </span>
-                <span>{formatPrice(cartItem.subtotal)}</span>
+              <div key={index} className="bg-gray-50 rounded-lg p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{cartItem.item.name}</p>
+                    {cartItem.selectedCustomizations.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {cartItem.selectedCustomizations.map((c) => c.name).join(', ')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="font-medium text-sm">{formatPrice(cartItem.subtotal)}</span>
+                    <button
+                      onClick={() => removeFromCart(index)}
+                      className="text-red-400 hover:text-red-600 p-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                {/* Quantity controls */}
+                <div className="flex items-center gap-3 mt-2">
+                  <button
+                    onClick={() => updateCartItemQuantity(index, cartItem.quantity - 1)}
+                    className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-sm hover:bg-white"
+                  >
+                    −
+                  </button>
+                  <span className="text-sm font-medium w-5 text-center">{cartItem.quantity}</span>
+                  <button
+                    onClick={() => updateCartItemQuantity(index, cartItem.quantity + 1)}
+                    className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-sm hover:bg-white"
+                  >
+                    +
+                  </button>
+                </div>
+                {/* Per-item note */}
+                <input
+                  type="text"
+                  value={cartItem.note || ''}
+                  onChange={(e) => updateCartItemNote(index, e.target.value)}
+                  placeholder={t.itemNote}
+                  maxLength={200}
+                  className="mt-2 w-full text-xs px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400 bg-white"
+                />
               </div>
             ))}
-            <div className="border-t mt-2 pt-2 flex justify-between font-semibold">
-              <span>{t.total}</span>
-              <span>{formatPrice(cartTotal)}</span>
-            </div>
+          </div>
+
+          {/* Total */}
+          <div className="border-t pt-3 flex justify-between font-semibold text-lg">
+            <span>{t.total}</span>
+            <span className="text-primary-600">{formatPrice(cartTotal)}</span>
           </div>
 
           {/* Order Note */}
@@ -810,12 +883,12 @@ export default function CustomerMenuPage() {
               value={orderNote}
               onChange={(e) => setOrderNote(e.target.value)}
               className="input"
-              rows={3}
+              rows={2}
               placeholder="e.g., No ice, extra lemon..."
             />
           </div>
 
-          <Button className="w-full" onClick={submitOrder} isLoading={isSubmitting}>
+          <Button className="w-full" onClick={submitOrder} isLoading={isSubmitting} disabled={cart.length === 0}>
             {t.placeOrder}
           </Button>
         </div>

@@ -72,9 +72,10 @@ export async function POST(request: NextRequest) {
     const body: CreateItemInput = await request.json()
     const { name, price, description, category, customizations } = body
 
-    if (!name || price === undefined || !category) {
+    const parsedPrice = Number(price)
+    if (!name || isNaN(parsedPrice) || parsedPrice < 0 || !category) {
       return NextResponse.json(
-        { success: false, error: 'Name, price, and category are required' },
+        { success: false, error: 'Name, price (≥ 0), and category are required' },
         { status: 400 }
       )
     }
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
         itemId,
         clientId: client.id,
         name,
-        price,
+        price: parsedPrice,
         description,
         category,
         customizations: customizations
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: item }, { status: 201 })
   } catch (error) {
-    console.error('Create item error:', error)
+    console.error('Create item error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

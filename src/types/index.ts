@@ -96,6 +96,7 @@ export interface CartItem {
   quantity: number
   selectedCustomizations: SelectedCustomization[]
   subtotal: number
+  note?: string
 }
 
 export interface ApiResponse<T = unknown> {
@@ -145,6 +146,7 @@ export interface CreateOrderInput {
     itemId: string
     quantity: number
     customizations?: SelectedCustomization[]
+    note?: string
   }[]
   customerNote?: string
 }
