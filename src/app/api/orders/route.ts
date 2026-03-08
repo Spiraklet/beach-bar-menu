@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch all items to calculate totals (deduplicate IDs for the query)
     const itemIds = items.map((i) => i.itemId)
-    const uniqueItemIds = [...new Set(itemIds)]
+    const uniqueItemIds = Array.from(new Set(itemIds))
     const menuItems = await prisma.item.findMany({
       where: {
         id: { in: uniqueItemIds },
