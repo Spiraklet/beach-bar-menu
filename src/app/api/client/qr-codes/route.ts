@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { prisma } from '@/lib/db'
 import { getCurrentUser, validateTableIdentifier } from '@/lib/auth'
 import QRCode from 'qrcode'
@@ -33,7 +34,7 @@ export async function GET() {
     // Generate QR code data URLs
     const qrCodesWithImages = await Promise.all(
       qrCodes.map(async (qr) => {
-        const url = `${process.env.NEXT_PUBLIC_APP_URL}/${client.clientId}/${qr.tableIdentifier}`
+        const url = `${process.env.NEXT_PUBLIC_APP_URL}/${client.clientId}/${qr.tableIdentifier}?t=${qr.token}`
         const dataUrl = await QRCode.toDataURL(url, {
           width: 300,
           margin: 2,
@@ -118,9 +119,9 @@ export async function POST(request: NextRequest) {
     // Look up ALL existing QR codes for these identifiers, including
     // soft-deleted ones. We need the full picture to decide what to do.
     const existingQRs = await prisma.$queryRaw<
-      { id: string; table_identifier: string; deleted_at: Date | null }[]
+      { id: string; table_identifier: string; deleted_at: Date | null; token: string | null }[]
     >`
-      SELECT id, table_identifier, deleted_at
+      SELECT id, table_identifier, deleted_at, token
       FROM qr_codes
       WHERE client_id = ${client.id}
         AND table_identifier = ANY(${normalisedIdentifiers}::text[])
@@ -147,14 +148,22 @@ export async function POST(request: NextRequest) {
         toRestore.map((qr) =>
           tx.qRCode.update({
             where: { id: qr.id },
-            data: { deletedAt: null },
+            data: {
+              deletedAt: null,
+              // Backfill token if missing (pre-migration records)
+              ...(qr.token ? {} : { token: randomBytes(16).toString('hex') }),
+            },
           })
         )
       )
       const created = await Promise.all(
         toCreate.map((tableIdentifier) =>
           tx.qRCode.create({
-            data: { clientId: client.id, tableIdentifier },
+            data: {
+              clientId: client.id,
+              tableIdentifier,
+              token: randomBytes(16).toString('hex'),
+            },
           })
         )
       )
@@ -164,7 +173,7 @@ export async function POST(request: NextRequest) {
     // Generate QR code images
     const qrCodesWithImages = await Promise.all(
       restoredAndCreated.map(async (qr) => {
-        const url = `${process.env.NEXT_PUBLIC_APP_URL}/${client.clientId}/${qr.tableIdentifier}`
+        const url = `${process.env.NEXT_PUBLIC_APP_URL}/${client.clientId}/${qr.tableIdentifier}?t=${qr.token}`
         const dataUrl = await QRCode.toDataURL(url, {
           width: 300,
           margin: 2,

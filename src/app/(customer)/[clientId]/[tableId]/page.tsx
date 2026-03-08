@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button, Modal, Toast, ToastType } from '@/components/ui'
 import { formatPrice, groupBy } from '@/lib/utils'
 import type { Item, CartItem, SelectedCustomization } from '@/types'
@@ -84,8 +84,10 @@ const translations = {
 export default function CustomerMenuPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const clientId = params.clientId as string
   const tableId = params.tableId as string
+  const token = searchParams.get('t') || ''
 
   const [lang, setLang] = useState<Language>('en')
   const [clientName, setClientName] = useState('')
@@ -256,6 +258,7 @@ export default function CustomerMenuPage() {
         body: JSON.stringify({
           clientId,
           tableId,
+          token,
           items: cart.map((cartItem) => ({
             itemId: cartItem.item.id,
             quantity: cartItem.quantity,

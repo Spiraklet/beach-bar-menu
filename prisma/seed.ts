@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { randomBytes } from 'crypto'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
@@ -102,6 +103,7 @@ async function main() {
       create: {
         clientId: client.id,
         tableIdentifier: table,
+        token: randomBytes(16).toString('hex'),
       },
     })
   }

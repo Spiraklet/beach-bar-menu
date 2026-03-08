@@ -120,6 +120,14 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
+    // Decrement pending order count when order is completed or cancelled
+    if (['COMPLETED', 'CANCELLED'].includes(status)) {
+      await prisma.qRCode.update({
+        where: { id: order.qrCodeId },
+        data: { pendingOrdersCount: { decrement: 1 } },
+      })
+    }
+
     return NextResponse.json({ success: true, data: updatedOrder })
   } catch (error) {
     console.error('Update staff order error:', error)

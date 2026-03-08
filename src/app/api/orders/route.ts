@@ -80,16 +80,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { clientId, tableId, items, customerNote } = body as {
+    const { clientId, tableId, token, items, customerNote } = body as {
       clientId: string
       tableId: string
+      token: string
       items: CreateOrderInput['items']
       customerNote?: string
     }
 
-    if (!clientId || !tableId || !items || items.length === 0) {
+    if (!clientId || !tableId || !token || !items || items.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Client ID, table ID, and items are required' },
+        { success: false, error: 'Client ID, table ID, security token, and items are required' },
         { status: 400 }
       )
     }
@@ -116,10 +117,47 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    if (!qrCode) {
+    if (!qrCode || qrCode.deletedAt) {
       return NextResponse.json(
         { success: false, error: 'Invalid table' },
         { status: 404 }
+      )
+    }
+
+    // Validate security token
+    if (qrCode.token !== token) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid or expired QR code' },
+        { status: 403 }
+      )
+    }
+
+    // Rate limiting: check orders this hour
+    const now = new Date()
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
+    const MAX_ORDERS_PER_HOUR = 10
+    const MAX_PENDING_ORDERS = 3
+
+    // Reset hourly counter if the window has passed
+    if (qrCode.hourResetAt < oneHourAgo) {
+      await prisma.qRCode.update({
+        where: { id: qrCode.id },
+        data: { ordersThisHour: 0, hourResetAt: now },
+      })
+      qrCode.ordersThisHour = 0
+    }
+
+    if (qrCode.ordersThisHour >= MAX_ORDERS_PER_HOUR) {
+      return NextResponse.json(
+        { success: false, error: 'Too many orders from this table. Please wait.' },
+        { status: 429 }
+      )
+    }
+
+    if (qrCode.pendingOrdersCount >= MAX_PENDING_ORDERS) {
+      return NextResponse.json(
+        { success: false, error: 'You have pending orders. Please wait for them to be prepared.' },
+        { status: 429 }
       )
     }
 
@@ -204,6 +242,16 @@ export async function POST(request: NextRequest) {
     // Set view_token via raw SQL — guarantees it is stored regardless of Prisma client version
     await prisma.$executeRaw`UPDATE orders SET view_token = ${viewToken} WHERE id = ${order.id}`
 
+    // Update rate limiting counters
+    await prisma.qRCode.update({
+      where: { id: qrCode.id },
+      data: {
+        ordersThisHour: { increment: 1 },
+        lastOrderAt: now,
+        pendingOrdersCount: { increment: 1 },
+      },
+    })
+
     return NextResponse.json({
       success: true,
       data: {
@@ -277,6 +325,14 @@ export async function PATCH(request: NextRequest) {
         },
       },
     })
+
+    // Decrement pending order count when order is completed or cancelled
+    if (['COMPLETED', 'CANCELLED'].includes(status)) {
+      await prisma.qRCode.update({
+        where: { id: order.qrCodeId },
+        data: { pendingOrdersCount: { decrement: 1 } },
+      })
+    }
 
     return NextResponse.json({ success: true, data: updatedOrder })
   } catch (error) {

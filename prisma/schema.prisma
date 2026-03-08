@@ -108,6 +108,7 @@ model QRCode {
   id              String    @id @default(cuid())
   clientId        String    @map("client_id")
   tableIdentifier String    @map("table_identifier") // alphanumeric like A1, B2
+  token           String    @unique @db.VarChar(32) // Security token for order validation
   createdAt       DateTime  @default(now()) @map("created_at")
   deletedAt       DateTime? @map("deleted_at") // Soft delete
 

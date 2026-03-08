@@ -46,6 +46,7 @@ export interface QRCode {
   id: string
   clientId: string
   tableIdentifier: string
+  token: string
   createdAt: Date
 }
 
