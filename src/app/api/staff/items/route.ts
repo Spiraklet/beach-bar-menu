@@ -24,8 +24,13 @@ export async function GET(request: NextRequest) {
 
     const items = await prisma.item.findMany({
       where: { clientId: payload.clientId },
-      include: { customizations: true },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      include: {
+        customizationSections: {
+          include: { options: { orderBy: { sortOrder: 'asc' } } },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     })
 
     const categories = Array.from(new Set(items.map((item) => item.category)))
@@ -101,7 +106,12 @@ export async function PATCH(request: NextRequest) {
     const updatedItem = await prisma.item.update({
       where: { id },
       data: updateData,
-      include: { customizations: true },
+      include: {
+        customizationSections: {
+          include: { options: { orderBy: { sortOrder: 'asc' } } },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
     })
 
     return NextResponse.json({ success: true, data: updatedItem })

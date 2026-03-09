@@ -38,3 +38,7 @@ export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
     return groups
   }, {} as Record<string, T[]>)
 }
+
+export function sortByOrder<T extends { sortOrder: number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.sortOrder - b.sortOrder)
+}

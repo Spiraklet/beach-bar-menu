@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button, Modal, Toast, ToastType } from '@/components/ui'
 import { formatPrice, groupBy } from '@/lib/utils'
-import type { Item, CartItem, SelectedCustomization } from '@/types'
+import type { Item, CartItem, SelectedCustomization, CustomizationSection } from '@/types'
 
 type Language = 'en' | 'el'
 
@@ -34,15 +34,13 @@ const translations = {
     orderPlaced: 'Order Placed!',
     orderConfirmation: 'Your order has been sent to the kitchen.',
     newOrder: 'Start New Order',
-    add: 'Add',
-    change: 'Change',
-    choose: 'Choose one (optional)',
-    removeOption: 'Remove',
     clearCart: 'Clear Cart',
     clearCartConfirm: 'Are you sure you want to clear your cart?',
     cancel: 'Cancel',
     clear: 'Clear',
-    selectOption: 'Please select an option',
+    required: 'Required',
+    optional: 'Optional',
+    selectRequired: 'Please make a selection',
   },
   el: {
     menu: 'Μενού',
@@ -69,15 +67,13 @@ const translations = {
     orderPlaced: 'Η Παραγγελία Καταχωρήθηκε!',
     orderConfirmation: 'Η παραγγελία σας στάλθηκε στην κουζίνα.',
     newOrder: 'Νέα Παραγγελία',
-    add: 'Προσθήκη',
-    change: 'Αλλαγή',
-    choose: 'Επιλέξτε ένα (προαιρετικό)',
-    removeOption: 'Αφαίρεση',
     clearCart: 'Άδειασμα Καλαθιού',
     clearCartConfirm: 'Είστε σίγουροι ότι θέλετε να αδειάσετε το καλάθι;',
     cancel: 'Ακύρωση',
     clear: 'Άδειασμα',
-    selectOption: 'Παρακαλώ επιλέξτε μια επιλογή',
+    required: 'Υποχρεωτικό',
+    optional: 'Προαιρετικό',
+    selectRequired: 'Παρακαλώ κάντε μια επιλογή',
   },
 }
 
@@ -140,6 +136,9 @@ export default function CustomerMenuPage() {
 
   const groupedItems = groupBy(filteredItems, 'category')
 
+  // Respect category order from the API
+  const orderedCategories = categories.filter((cat) => groupedItems[cat]?.length > 0)
+
   const cartTotal = cart.reduce((sum, item) => sum + item.subtotal, 0)
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
@@ -149,53 +148,49 @@ export default function CustomerMenuPage() {
     setSelectedCustomizations([])
   }
 
-  const toggleCustomization = (cust: SelectedCustomization, allCustomizations?: { id: string; action: string }[]) => {
+  const toggleCustomization = (cust: SelectedCustomization, section: CustomizationSection) => {
     setSelectedCustomizations((prev) => {
-      const exists = prev.find((c) => c.id === cust.id)
+      const exists = prev.find((c) => c.optionId === cust.optionId)
 
-      // CHANGE and CHOOSE both behave as radio buttons (single-select within their group)
-      if (cust.action === 'CHANGE' || cust.action === 'CHOOSE') {
-        // Get all IDs of the same action group for this item
-        const sameActionIds = allCustomizations
-          ?.filter((c) => c.action === cust.action)
-          .map((c) => c.id) || []
-
-        // Remove any other selection from the same group, then add/toggle this one
-        const withoutSameGroup = prev.filter((c) => !sameActionIds.includes(c.id))
+      if (!section.multiSelect) {
+        // Single-select: radio button behavior
+        const withoutSection = prev.filter((c) => c.sectionId !== section.id)
 
         if (exists) {
-          // Clicking the selected option again deselects it
-          // (CHANGE: deselect allowed here, validation gate prevents cart if nothing selected)
-          // (CHOOSE: deselect always allowed — it's optional)
-          return withoutSameGroup
+          // Clicking selected option deselects it (allowed for optional sections)
+          return withoutSection
         }
-        return [...withoutSameGroup, cust]
+        return [...withoutSection, cust]
       }
 
-      // For ADD/REMOVE, allow multi-select (checkbox toggle)
+      // Multi-select: checkbox behavior
       if (exists) {
-        return prev.filter((c) => c.id !== cust.id)
+        return prev.filter((c) => c.optionId !== cust.optionId)
       }
       return [...prev, cust]
     })
   }
 
-  // Check if item requires CHANGE selection
-  const hasChangeCustomizations = (item: Item | null) => {
-    if (!item?.customizations) return false
-    return item.customizations.some((c) => c.action === 'CHANGE')
-  }
-
-  // Check if a CHANGE customization is selected
-  const hasChangeSelected = () => {
-    return selectedCustomizations.some((c) => c.action === 'CHANGE')
-  }
-
-  // Can add to cart - must have CHANGE selection if CHANGE options exist
+  // Check if all required sections have a selection
   const canAddToCart = () => {
     if (!selectedItem) return false
-    if (!hasChangeCustomizations(selectedItem)) return true
-    return hasChangeSelected()
+    const sections = selectedItem.customizationSections || []
+    for (const section of sections) {
+      if (section.required) {
+        const hasSelection = selectedCustomizations.some((c) => c.sectionId === section.id)
+        if (!hasSelection) return false
+      }
+    }
+    return true
+  }
+
+  // Check which required sections are missing selections
+  const missingRequiredSections = () => {
+    if (!selectedItem) return []
+    const sections = selectedItem.customizationSections || []
+    return sections.filter(
+      (s) => s.required && !selectedCustomizations.some((c) => c.sectionId === s.id)
+    )
   }
 
   const addToCart = () => {
@@ -390,11 +385,11 @@ export default function CustomerMenuPage() {
           <p className="text-center text-gray-500 py-12">{t.noItems}</p>
         ) : (
           <div className="space-y-8">
-            {Object.entries(groupedItems).map(([category, categoryItems]) => (
+            {orderedCategories.map((category) => (
               <div key={category}>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">{category}</h2>
                 <div className="space-y-3">
-                  {categoryItems.map((item) => (
+                  {(groupedItems[category] || []).map((item) => (
                     <button
                       key={item.id}
                       onClick={() => item.active && openItemModal(item)}
@@ -469,32 +464,45 @@ export default function CustomerMenuPage() {
               {formatPrice(selectedItem.price)}
             </p>
 
-            {/* Customizations */}
-            {selectedItem.customizations && selectedItem.customizations.length > 0 && (
+            {/* Customization Sections */}
+            {selectedItem.customizationSections && selectedItem.customizationSections.length > 0 && (
               <div className="space-y-4">
-                {/* CHANGE customizations - Radio buttons (single select, required) */}
-                {selectedItem.customizations.filter((c) => c.action === 'CHANGE').length > 0 && (
-                  <div>
-                    <p className="font-medium text-gray-900 mb-2">
-                      {t.change} <span className="text-red-500">*</span>
-                    </p>
-                    <div className="space-y-2">
-                      {selectedItem.customizations
-                        .filter((cust) => cust.action === 'CHANGE')
-                        .map((cust) => {
-                          const isSelected = selectedCustomizations.some((c) => c.id === cust.id)
+                {selectedItem.customizationSections.map((section) => {
+                  const sectionMissing = section.required && !selectedCustomizations.some((c) => c.sectionId === section.id)
+
+                  return (
+                    <div key={section.id}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="font-medium text-gray-900">{section.name}</p>
+                        {section.required ? (
+                          <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">{t.required}</span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{t.optional}</span>
+                        )}
+                        {!section.multiSelect && (
+                          <span className="text-xs text-gray-400">
+                            {lang === 'en' ? '(pick one)' : '(επιλέξτε ένα)'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        {section.options.map((opt) => {
+                          const isSelected = selectedCustomizations.some((c) => c.optionId === opt.id)
+
                           return (
                             <button
-                              key={cust.id}
+                              key={opt.id}
                               onClick={() =>
                                 toggleCustomization(
                                   {
-                                    id: cust.id,
-                                    name: cust.name,
-                                    price: Number(cust.price),
-                                    action: cust.action,
+                                    optionId: opt.id,
+                                    sectionId: section.id,
+                                    sectionName: section.name,
+                                    name: opt.name,
+                                    price: Number(opt.price),
                                   },
-                                  selectedItem.customizations
+                                  section
                                 )
                               }
                               className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
@@ -504,181 +512,50 @@ export default function CustomerMenuPage() {
                               }`}
                             >
                               <div className="flex items-center gap-2">
-                                <span
-                                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                    isSelected ? 'border-primary-600' : 'border-gray-300'
-                                  }`}
-                                >
-                                  {isSelected && (
-                                    <span className="w-2.5 h-2.5 rounded-full bg-primary-600" />
-                                  )}
-                                </span>
-                                <span className="text-sm">{cust.name}</span>
+                                {section.multiSelect ? (
+                                  // Checkbox indicator
+                                  <span
+                                    className={`w-5 h-5 rounded border flex items-center justify-center ${
+                                      isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                                    }`}
+                                  >
+                                    {isSelected && (
+                                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </span>
+                                ) : (
+                                  // Radio indicator
+                                  <span
+                                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                      isSelected ? 'border-primary-600' : 'border-gray-300'
+                                    }`}
+                                  >
+                                    {isSelected && (
+                                      <span className="w-2.5 h-2.5 rounded-full bg-primary-600" />
+                                    )}
+                                  </span>
+                                )}
+                                <span className="text-sm">{opt.name}</span>
                               </div>
-                              {Number(cust.price) > 0 && (
-                                <span className="text-sm text-gray-500">+{formatPrice(cust.price)}</span>
+                              {Number(opt.price) > 0 && (
+                                <span className="text-sm text-gray-500">+{formatPrice(opt.price)}</span>
+                              )}
+                              {Number(opt.price) < 0 && (
+                                <span className="text-sm text-gray-500">{formatPrice(opt.price)}</span>
                               )}
                             </button>
                           )
                         })}
-                    </div>
-                    {!hasChangeSelected() && (
-                      <p className="text-sm text-red-500 mt-1">{t.selectOption}</p>
-                    )}
-                  </div>
-                )}
+                      </div>
 
-                {/* CHOOSE customizations - Radio buttons (single-select, optional) */}
-                {selectedItem.customizations.filter((c) => c.action === 'CHOOSE').length > 0 && (
-                  <div>
-                    <p className="font-medium text-gray-900 mb-2">{t.choose}</p>
-                    <div className="space-y-2">
-                      {selectedItem.customizations
-                        .filter((cust) => cust.action === 'CHOOSE')
-                        .map((cust) => {
-                          const isSelected = selectedCustomizations.some((c) => c.id === cust.id)
-                          return (
-                            <button
-                              key={cust.id}
-                              onClick={() =>
-                                toggleCustomization(
-                                  {
-                                    id: cust.id,
-                                    name: cust.name,
-                                    price: Number(cust.price),
-                                    action: cust.action,
-                                  },
-                                  selectedItem.customizations
-                                )
-                              }
-                              className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                                isSelected
-                                  ? 'border-primary-500 bg-primary-50'
-                                  : 'border-gray-200 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                    isSelected ? 'border-primary-600' : 'border-gray-300'
-                                  }`}
-                                >
-                                  {isSelected && (
-                                    <span className="w-2.5 h-2.5 rounded-full bg-primary-600" />
-                                  )}
-                                </span>
-                                <span className="text-sm">{cust.name}</span>
-                              </div>
-                              {Number(cust.price) > 0 && (
-                                <span className="text-sm text-gray-500">+{formatPrice(cust.price)}</span>
-                              )}
-                            </button>
-                          )
-                        })}
+                      {sectionMissing && (
+                        <p className="text-sm text-red-500 mt-1">{t.selectRequired}</p>
+                      )}
                     </div>
-                    {/* No required validation message — CHOOSE is optional */}
-                  </div>
-                )}
-
-                {/* ADD customizations - Checkboxes (multi-select, optional) */}
-                {selectedItem.customizations.filter((c) => c.action === 'ADD').length > 0 && (
-                  <div>
-                    <p className="font-medium text-gray-900 mb-2">{t.add}</p>
-                    <div className="space-y-2">
-                      {selectedItem.customizations
-                        .filter((cust) => cust.action === 'ADD')
-                        .map((cust) => {
-                          const isSelected = selectedCustomizations.some((c) => c.id === cust.id)
-                          return (
-                            <button
-                              key={cust.id}
-                              onClick={() =>
-                                toggleCustomization({
-                                  id: cust.id,
-                                  name: cust.name,
-                                  price: Number(cust.price),
-                                  action: cust.action,
-                                })
-                              }
-                              className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                                isSelected
-                                  ? 'border-primary-500 bg-primary-50'
-                                  : 'border-gray-200 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`w-5 h-5 rounded border flex items-center justify-center ${
-                                    isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
-                                  }`}
-                                >
-                                  {isSelected && (
-                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </span>
-                                <span className="text-sm">{cust.name}</span>
-                              </div>
-                              {Number(cust.price) > 0 && (
-                                <span className="text-sm text-gray-500">+{formatPrice(cust.price)}</span>
-                              )}
-                            </button>
-                          )
-                        })}
-                    </div>
-                  </div>
-                )}
-
-                {/* REMOVE customizations - Checkboxes (multi-select, optional) */}
-                {selectedItem.customizations.filter((c) => c.action === 'REMOVE').length > 0 && (
-                  <div>
-                    <p className="font-medium text-gray-900 mb-2">{t.removeOption}</p>
-                    <div className="space-y-2">
-                      {selectedItem.customizations
-                        .filter((cust) => cust.action === 'REMOVE')
-                        .map((cust) => {
-                          const isSelected = selectedCustomizations.some((c) => c.id === cust.id)
-                          return (
-                            <button
-                              key={cust.id}
-                              onClick={() =>
-                                toggleCustomization({
-                                  id: cust.id,
-                                  name: cust.name,
-                                  price: Number(cust.price),
-                                  action: cust.action,
-                                })
-                              }
-                              className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                                isSelected
-                                  ? 'border-primary-500 bg-primary-50'
-                                  : 'border-gray-200 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`w-5 h-5 rounded border flex items-center justify-center ${
-                                    isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
-                                  }`}
-                                >
-                                  {isSelected && (
-                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </span>
-                                <span className="text-sm">{cust.name}</span>
-                              </div>
-                              {Number(cust.price) !== 0 && (
-                                <span className="text-sm text-gray-500">{formatPrice(cust.price)}</span>
-                              )}
-                            </button>
-                          )
-                        })}
-                    </div>
-                  </div>
-                )}
+                  )
+                })}
               </div>
             )}
 
@@ -711,6 +588,14 @@ export default function CustomerMenuPage() {
                 (Number(selectedItem.price) + selectedCustomizations.reduce((sum, c) => sum + c.price, 0)) * itemQuantity
               )}
             </Button>
+
+            {missingRequiredSections().length > 0 && (
+              <p className="text-xs text-center text-red-500">
+                {lang === 'en'
+                  ? `Please select: ${missingRequiredSections().map((s) => s.name).join(', ')}`
+                  : `Παρακαλώ επιλέξτε: ${missingRequiredSections().map((s) => s.name).join(', ')}`}
+              </p>
+            )}
           </div>
         )}
       </Modal>

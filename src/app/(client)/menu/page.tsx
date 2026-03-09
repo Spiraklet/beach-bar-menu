@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import ClientLayout from '@/components/client/ClientLayout'
 import MenuItemForm from '@/components/client/MenuItemForm'
+import MenuPreview from '@/components/client/MenuPreview'
+import ReorderButtons from '@/components/client/ReorderButtons'
 import { Button, Modal, Toast, ToastType } from '@/components/ui'
 import { formatPrice } from '@/lib/utils'
 import type { Item } from '@/types'
@@ -15,6 +17,7 @@ export default function MenuPage() {
   const [editingItem, setEditingItem] = useState<Item | null>(null)
   const [deletingItem, setDeletingItem] = useState<Item | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
 
   const fetchItems = useCallback(async () => {
@@ -83,14 +86,75 @@ export default function MenuPage() {
     }
   }
 
+  // Reorder API call helper
+  const reorder = async (type: string, payload: Record<string, unknown>) => {
+    try {
+      const response = await fetch('/api/client/items/reorder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, ...payload }),
+      })
+      const data = await response.json()
+      if (!data.success) {
+        setToast({ message: 'Failed to reorder', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'An error occurred', type: 'error' })
+    }
+  }
+
+  // Move a category up/down
+  const moveCategory = async (catIdx: number, direction: 'up' | 'down') => {
+    const newIdx = direction === 'up' ? catIdx - 1 : catIdx + 1
+    if (newIdx < 0 || newIdx >= categories.length) return
+
+    const newOrder = [...categories]
+    ;[newOrder[catIdx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[catIdx]]
+    setCategories(newOrder)
+    await reorder('categories', { categoryOrder: newOrder })
+  }
+
+  // Move an item up/down within its category
+  const moveItem = async (item: Item, direction: 'up' | 'down') => {
+    const categoryItems = items
+      .filter((i) => i.category === item.category)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+    const idx = categoryItems.findIndex((i) => i.id === item.id)
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= categoryItems.length) return
+
+    // Swap sort orders
+    const updatedItems = categoryItems.map((ci, i) => ({
+      ...ci,
+      sortOrder: i === idx ? newIdx : i === newIdx ? idx : i,
+    }))
+
+    // Optimistic update in local state
+    setItems((prev) =>
+      prev.map((i) => {
+        const updated = updatedItems.find((u) => u.id === i.id)
+        return updated ? { ...i, sortOrder: updated.sortOrder } : i
+      })
+    )
+
+    await reorder('items', {
+      items: updatedItems.map((i) => ({ id: i.id, sortOrder: i.sortOrder })),
+    })
+  }
+
   const filteredItems = selectedCategory
     ? items.filter((item) => item.category === selectedCategory)
     : items
 
-  const groupedItems = categories.reduce((acc, category) => {
-    acc[category] = filteredItems.filter((item) => item.category === category)
-    return acc
-  }, {} as Record<string, Item[]>)
+  const groupedItems: Record<string, Item[]> = {}
+  for (const cat of categories) {
+    const catItems = filteredItems
+      .filter((item) => item.category === cat)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+    if (catItems.length > 0 || !selectedCategory) {
+      groupedItems[cat] = catItems
+    }
+  }
 
   return (
     <ClientLayout>
@@ -101,12 +165,17 @@ export default function MenuPage() {
             <h1 className="text-2xl font-bold text-gray-900">Menu</h1>
             <p className="text-gray-600 mt-1">{items.length} items across {categories.length} categories</p>
           </div>
-          <Button onClick={() => {
-              setEditingItem(null)
-              setIsFormOpen(true)
-            }}>
-              Add Item
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setIsPreviewOpen(true)}>
+              Preview
             </Button>
+            <Button onClick={() => {
+                setEditingItem(null)
+                setIsFormOpen(true)
+              }}>
+                Add Item
+            </Button>
+          </div>
         </div>
 
         {/* Category Filter */}
@@ -149,14 +218,27 @@ export default function MenuPage() {
         ) : (
           <div className="space-y-8">
             {Object.entries(groupedItems).map(
-              ([category, categoryItems]) =>
+              ([category, categoryItems], catIdx) =>
                 categoryItems.length > 0 && (
                   <div key={category}>
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">
-                      {category}
-                    </h2>
+                    {/* Category header with reorder */}
+                    <div className="flex items-center gap-2 mb-4 border-b pb-2">
+                      {!selectedCategory && (
+                        <ReorderButtons
+                          onMoveUp={() => moveCategory(catIdx, 'up')}
+                          onMoveDown={() => moveCategory(catIdx, 'down')}
+                          isFirst={catIdx === 0}
+                          isLast={catIdx === Object.keys(groupedItems).length - 1}
+                          size="sm"
+                          direction="horizontal"
+                        />
+                      )}
+                      <h2 className="text-lg font-semibold text-gray-900">
+                        {category}
+                      </h2>
+                    </div>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {categoryItems.map((item) => (
+                      {categoryItems.map((item, itemIdx) => (
                         <div
                           key={item.id}
                           className={`card relative ${!item.active ? 'opacity-60' : ''}`}
@@ -175,32 +257,52 @@ export default function MenuPage() {
                             </button>
                           </div>
 
-                          <div className="pr-20">
-                            <p className="text-xs text-gray-400 font-mono">#{item.itemId}</p>
-                            <h3 className="font-semibold text-gray-900">{item.name}</h3>
-                            <p className="text-primary-600 font-semibold mt-1">
-                              {formatPrice(item.price)}
-                            </p>
+                          <div className="flex gap-2">
+                            {/* Reorder buttons for items */}
+                            <ReorderButtons
+                              onMoveUp={() => moveItem(item, 'up')}
+                              onMoveDown={() => moveItem(item, 'down')}
+                              isFirst={itemIdx === 0}
+                              isLast={itemIdx === categoryItems.length - 1}
+                            />
+                            <div className="pr-16 flex-1 min-w-0">
+                              <p className="text-xs text-gray-400 font-mono">#{item.itemId}</p>
+                              <h3 className="font-semibold text-gray-900">{item.name}</h3>
+                              <p className="text-primary-600 font-semibold mt-1">
+                                {formatPrice(item.price)}
+                              </p>
+                            </div>
                           </div>
 
                           {item.description && (
                             <p className="text-sm text-gray-600 mt-2">{item.description}</p>
                           )}
 
-                          {item.customizations && item.customizations.length > 0 && (
-                            <div className="mt-3 pt-3 border-t">
-                              <p className="text-xs text-gray-500 mb-1">Options:</p>
-                              <div className="flex flex-wrap gap-1">
-                                {item.customizations.map((c) => (
-                                  <span
-                                    key={c.id}
-                                    className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700"
-                                  >
-                                    {c.name}
-                                    {Number(c.price) > 0 && ` +${formatPrice(c.price)}`}
-                                  </span>
-                                ))}
-                              </div>
+                          {/* Customization sections display */}
+                          {item.customizationSections && item.customizationSections.length > 0 && (
+                            <div className="mt-3 pt-3 border-t space-y-2">
+                              {item.customizationSections.map((section) => (
+                                <div key={section.id}>
+                                  <p className="text-xs text-gray-500 font-medium">
+                                    {section.name}
+                                    {section.required && <span className="text-red-500 ml-1">*</span>}
+                                    <span className="text-gray-400 ml-1">
+                                      ({section.multiSelect ? 'multi' : 'single'})
+                                    </span>
+                                  </p>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {section.options.map((opt) => (
+                                      <span
+                                        key={opt.id}
+                                        className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700"
+                                      >
+                                        {opt.name}
+                                        {Number(opt.price) > 0 && ` +${formatPrice(opt.price)}`}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           )}
 
@@ -242,6 +344,14 @@ export default function MenuPage() {
         onSuccess={fetchItems}
         existingCategories={categories}
         editItem={editingItem}
+      />
+
+      {/* Menu Preview Modal */}
+      <MenuPreview
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        items={items}
+        categories={categories}
       />
 
       {/* Delete Confirmation Modal */}

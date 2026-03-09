@@ -4,6 +4,13 @@ import { prisma } from '@/lib/db'
 import { getCurrentUser, generateItemId } from '@/lib/auth'
 import type { CreateItemInput, UpdateItemInput } from '@/types'
 
+const SECTIONS_INCLUDE = {
+  customizationSections: {
+    include: { options: { orderBy: { sortOrder: 'asc' as const } } },
+    orderBy: { sortOrder: 'asc' as const },
+  },
+}
+
 // GET all items for client
 export async function GET() {
   try {
@@ -28,16 +35,23 @@ export async function GET() {
 
     const items = await prisma.item.findMany({
       where: { clientId: client.id },
-      include: {
-        customizations: true,
-      },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      include: SECTIONS_INCLUDE,
+      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    // Get unique categories
-    const categories = Array.from(new Set(items.map(item => item.category)))
+    // Get unique categories in order
+    const categoryOrder = (client.categoryOrder as string[] | null) || []
+    const allCategories = Array.from(new Set(items.map(item => item.category)))
+    // Ordered categories first, then any new ones alphabetically
+    const orderedCategories = [
+      ...categoryOrder.filter(c => allCategories.includes(c)),
+      ...allCategories.filter(c => !categoryOrder.includes(c)).sort(),
+    ]
 
-    return NextResponse.json({ success: true, data: { items, categories } })
+    return NextResponse.json({
+      success: true,
+      data: { items, categories: orderedCategories, categoryOrder },
+    })
   } catch (error) {
     console.error('Get items error:', error)
     return NextResponse.json(
@@ -70,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: CreateItemInput = await request.json()
-    const { name, price, description, category, customizations } = body
+    const { name, price, description, category, sortOrder, customizationSections } = body
 
     const parsedPrice = Number(price)
     if (!name || isNaN(parsedPrice) || parsedPrice < 0 || !category) {
@@ -91,19 +105,26 @@ export async function POST(request: NextRequest) {
         price: parsedPrice,
         description,
         category,
-        customizations: customizations
+        sortOrder: sortOrder ?? 0,
+        customizationSections: customizationSections
           ? {
-              create: customizations.map((c) => ({
-                name: c.name,
-                price: c.price,
-                action: c.action,
+              create: customizationSections.map((section, sIdx) => ({
+                name: section.name,
+                required: section.required,
+                multiSelect: section.multiSelect,
+                sortOrder: sIdx,
+                options: {
+                  create: section.options.map((opt, oIdx) => ({
+                    name: opt.name,
+                    price: opt.price,
+                    sortOrder: oIdx,
+                  })),
+                },
               })),
             }
           : undefined,
       },
-      include: {
-        customizations: true,
-      },
+      include: SECTIONS_INCLUDE,
     })
 
     return NextResponse.json({ success: true, data: item }, { status: 201 })
@@ -128,7 +149,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { id, customizations, ...updates }: { id: string; customizations?: UpdateItemInput['customizations'] } & Omit<UpdateItemInput, 'customizations'> = body
+    const { id, customizationSections, ...updates }: {
+      id: string
+      customizationSections?: UpdateItemInput['customizationSections']
+    } & Omit<UpdateItemInput, 'customizationSections'> = body
 
     if (!id) {
       return NextResponse.json(
@@ -149,11 +173,11 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    // Update item and customizations in a transaction
+    // Update item and customization sections in a transaction
     const item = await prisma.$transaction(async (tx) => {
-      // Delete existing customizations if new ones provided
-      if (customizations) {
-        await tx.itemCustomization.deleteMany({
+      // Delete existing sections (cascades to options) if new ones provided
+      if (customizationSections) {
+        await tx.customizationSection.deleteMany({
           where: { itemId: id },
         })
       }
@@ -162,19 +186,25 @@ export async function PATCH(request: NextRequest) {
         where: { id },
         data: {
           ...updates,
-          customizations: customizations
+          customizationSections: customizationSections
             ? {
-                create: customizations.map((c) => ({
-                  name: c.name,
-                  price: c.price,
-                  action: c.action,
+                create: customizationSections.map((section, sIdx) => ({
+                  name: section.name,
+                  required: section.required,
+                  multiSelect: section.multiSelect,
+                  sortOrder: sIdx,
+                  options: {
+                    create: section.options.map((opt, oIdx) => ({
+                      name: opt.name,
+                      price: opt.price,
+                      sortOrder: oIdx,
+                    })),
+                  },
                 })),
               }
             : undefined,
         },
-        include: {
-          customizations: true,
-        },
+        include: SECTIONS_INCLUDE,
       })
     })
 

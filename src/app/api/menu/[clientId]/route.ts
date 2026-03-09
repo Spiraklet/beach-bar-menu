@@ -14,6 +14,7 @@ export async function GET(
         id: true,
         clientId: true,
         companyName: true,
+        categoryOrder: true,
       },
     })
 
@@ -31,12 +32,21 @@ export async function GET(
         hidden: false,
       },
       include: {
-        customizations: true,
+        customizationSections: {
+          include: { options: { orderBy: { sortOrder: 'asc' } } },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    const categories = Array.from(new Set(items.map((item) => item.category)))
+    // Order categories: use client's saved order, then alphabetically for new ones
+    const categoryOrder = (client.categoryOrder as string[] | null) || []
+    const allCategories = Array.from(new Set(items.map((item) => item.category)))
+    const categories = [
+      ...categoryOrder.filter((c) => allCategories.includes(c)),
+      ...allCategories.filter((c) => !categoryOrder.includes(c)).sort(),
+    ]
 
     return NextResponse.json({
       success: true,
@@ -47,6 +57,7 @@ export async function GET(
         },
         items,
         categories,
+        categoryOrder,
       },
     })
   } catch (error) {

@@ -170,9 +170,6 @@ export async function POST(request: NextRequest) {
         clientId: client.id,
         active: true,
       },
-      include: {
-        customizations: true,
-      },
     })
 
     if (menuItems.length !== uniqueItemIds.length) {

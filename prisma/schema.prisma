@@ -31,6 +31,7 @@ model Client {
   email           String    @unique
   passwordHash    String    @map("password_hash")
   stripeAccountId String?   @map("stripe_account_id")
+  categoryOrder   Json?     @map("category_order") // string[] of category names in display order
   createdAt       DateTime  @default(now()) @map("created_at")
   deletedAt       DateTime? @map("deleted_at") // Soft delete
 
@@ -69,36 +70,44 @@ model Item {
   price       Decimal   @db.Decimal(10, 2)
   description String?
   category    String
+  sortOrder   Int       @default(0) @map("sort_order")
   active      Boolean   @default(true) // Out of stock toggle
   hidden      Boolean   @default(false) // Hidden from menu
   createdAt   DateTime  @default(now()) @map("created_at")
   deletedAt   DateTime? @map("deleted_at") // Soft delete
 
-  client         Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  customizations ItemCustomization[]
-  orderItems     OrderItem[]
+  client                Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  customizationSections CustomizationSection[]
+  orderItems            OrderItem[]
 
   @@unique([clientId, itemId])
   @@map("items")
 }
 
-enum CustomizationAction {
-  ADD
-  CHANGE
-  REMOVE
-  CHOOSE // Optional single-select (radio, not required)
+model CustomizationSection {
+  id          String  @id @default(cuid())
+  itemId      String  @map("item_id")
+  name        String
+  required    Boolean @default(false)
+  multiSelect Boolean @default(false) @map("multi_select")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  item    Item                  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  options CustomizationOption[]
+
+  @@map("customization_sections")
 }
 
-model ItemCustomization {
-  id     String              @id @default(cuid())
-  itemId String              @map("item_id")
-  name   String
-  price  Decimal             @db.Decimal(10, 2)
-  action CustomizationAction @default(ADD)
+model CustomizationOption {
+  id        String  @id @default(cuid())
+  sectionId String  @map("section_id")
+  name      String
+  price     Decimal @db.Decimal(10, 2)
+  sortOrder Int     @default(0) @map("sort_order")
 
-  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  section CustomizationSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  @@map("item_customizations")
+  @@map("customization_options")
 }
 
 // ============================================================================

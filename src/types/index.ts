@@ -1,7 +1,6 @@
 import { Decimal } from '@prisma/client/runtime/library'
 
 export type OrderStatus = 'NEW' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED'
-export type CustomizationAction = 'ADD' | 'CHANGE' | 'REMOVE' | 'CHOOSE'
 
 export interface Admin {
   id: string
@@ -17,6 +16,7 @@ export interface Client {
   phone: string
   email: string
   stripeAccountId: string | null
+  categoryOrder: string[] | null
   createdAt: Date
 }
 
@@ -28,18 +28,29 @@ export interface Item {
   price: Decimal | number | string
   description: string | null
   category: string
+  sortOrder: number
   active: boolean
   hidden: boolean
   createdAt: Date
-  customizations?: ItemCustomization[]
+  customizationSections?: CustomizationSection[]
 }
 
-export interface ItemCustomization {
+export interface CustomizationSection {
   id: string
   itemId: string
   name: string
+  required: boolean
+  multiSelect: boolean
+  sortOrder: number
+  options: CustomizationOption[]
+}
+
+export interface CustomizationOption {
+  id: string
+  sectionId: string
+  name: string
   price: Decimal | number | string
-  action: CustomizationAction
+  sortOrder: number
 }
 
 export interface QRCode {
@@ -87,10 +98,11 @@ export interface OrderItem {
 }
 
 export interface SelectedCustomization {
-  id: string
+  optionId: string
+  sectionId: string
+  sectionName: string
   name: string
   price: number
-  action: CustomizationAction
 }
 
 export interface CartItem {
@@ -122,12 +134,20 @@ export interface UpdateClientInput {
   email?: string
 }
 
+export interface SectionInput {
+  name: string
+  required: boolean
+  multiSelect: boolean
+  options: { name: string; price: number }[]
+}
+
 export interface CreateItemInput {
   name: string
   price: number
   description?: string
   category: string
-  customizations?: Omit<ItemCustomization, 'id' | 'itemId'>[]
+  sortOrder?: number
+  customizationSections?: SectionInput[]
 }
 
 export interface UpdateItemInput {
@@ -136,7 +156,8 @@ export interface UpdateItemInput {
   description?: string
   category?: string
   active?: boolean
-  customizations?: Omit<ItemCustomization, 'id' | 'itemId'>[]
+  sortOrder?: number
+  customizationSections?: SectionInput[]
 }
 
 export interface CreateQRCodeInput {
