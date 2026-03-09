@@ -194,6 +194,21 @@ model OrderItem {
 }
 
 // ============================================================================
+// LEADS (Landing page form submissions)
+// ============================================================================
+model Lead {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(100)
+  email        String   @db.VarChar(255)
+  businessName String?  @map("business_name") @db.VarChar(150)
+  phone        String?  @db.VarChar(30)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@map("leads")
+}
+
+// ============================================================================
 // LOGIN ATTEMPTS (Rate Limiting)
 // ============================================================================
 model LoginAttempt {

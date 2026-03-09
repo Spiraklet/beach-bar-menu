@@ -1,15 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Default (dashboard) variables ─── */
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-rgb: 255, 255, 255;
+
+  /* Neutral defaults so HSL-based Tailwind classes don't break outside .landing */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+  --primary: 201 96% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 201 96% 32%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 0%;
+  --radius: 0.5rem;
+  --sand: 35 50% 82%;
+  --ocean: 195 40% 35%;
+  --section-dark: 18 65% 42%;
+  --section-dark-foreground: 38 60% 88%;
+  --illustration: 18 65% 48%;
+  --hero-overlay: 20 15% 5%;
+}
+
+/* ─── Landing page color scheme ─── */
+.landing {
+  --background: 20 15% 8%;
+  --foreground: 35 50% 82%;
+  --card: 20 12% 11%;
+  --card-foreground: 35 50% 82%;
+  --popover: 20 12% 11%;
+  --popover-foreground: 35 50% 82%;
+  --primary: 18 65% 48%;
+  --primary-foreground: 35 50% 88%;
+  --secondary: 20 15% 15%;
+  --secondary-foreground: 35 45% 75%;
+  --muted: 20 10% 14%;
+  --muted-foreground: 30 20% 50%;
+  --accent: 28 70% 55%;
+  --accent-foreground: 20 15% 8%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 20 15% 18%;
+  --input: 20 15% 18%;
+  --ring: 18 65% 48%;
+  --hero-overlay: 20 15% 5%;
+  --section-dark: 18 65% 42%;
+  --section-dark-foreground: 38 60% 88%;
+  --sand: 35 50% 82%;
+  --ocean: 195 40% 35%;
+  --illustration: 18 65% 48%;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
+}
+
+@layer base {
+  .landing * {
+    border-color: hsl(var(--border));
+  }
+
+  .landing {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  .landing h1,
+  .landing h2,
+  .landing h3,
+  .landing h4,
+  .landing h5,
+  .landing h6 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+  }
 }
 
 @layer components {
@@ -87,6 +167,44 @@ body {
 
   .badge-cancelled {
     @apply bg-red-100 text-red-800;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+
+  .hero-overlay {
+    background: linear-gradient(
+      to bottom,
+      hsla(var(--hero-overlay) / 0.75) 0%,
+      hsla(var(--hero-overlay) / 0.5) 40%,
+      hsla(var(--hero-overlay) / 0.6) 70%,
+      hsla(var(--hero-overlay) / 0.85) 100%
+    );
+  }
+
+  .section-dark {
+    background-color: hsl(var(--section-dark));
+    color: hsl(var(--section-dark-foreground));
+  }
+
+  .illustration-stroke {
+    stroke: hsl(var(--illustration));
+    stroke-width: 0.7;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .illustration-stroke-light {
+    stroke: hsl(var(--section-dark-foreground));
+    stroke-width: 0.7;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 }
 

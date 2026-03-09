@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin', 'greek'] })
 
 export const metadata: Metadata = {
-  title: 'Beach Bar Menu',
-  description: 'Digital menu and ordering system for beach bars',
+  title: 'Ferteto — Digital Menus for Beach Bars',
+  description: 'Beautiful digital menus, QR codes for every table, and real-time order management for beach bars.',
 }
 
 export default function RootLayout({
@@ -16,7 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        {children}
+        <Toaster position="top-center" richColors />
+      </body>
     </html>
   )
 }
