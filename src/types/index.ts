@@ -51,6 +51,8 @@ export interface CustomizationOption {
   name: string
   price: Decimal | number | string
   sortOrder: number
+  available: boolean
+  hidden: boolean
 }
 
 export interface QRCode {
@@ -65,7 +67,9 @@ export interface Order {
   id: string
   clientId: string
   qrCodeId: string
-  orderNumber: number
+  displayCode: string
+  orderNumber: string
+  dailySequence: number
   status: OrderStatus
   total: Decimal | number | string
   stripePaymentId: string | null

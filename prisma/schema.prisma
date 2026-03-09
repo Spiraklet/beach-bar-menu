@@ -104,6 +104,8 @@ model CustomizationOption {
   name      String
   price     Decimal @db.Decimal(10, 2)
   sortOrder Int     @default(0) @map("sort_order")
+  available Boolean @default(true)
+  hidden    Boolean @default(false)
 
   section CustomizationSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 

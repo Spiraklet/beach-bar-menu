@@ -489,12 +489,14 @@ export default function CustomerMenuPage() {
                       <div className="space-y-2">
                         {section.options.map((opt) => {
                           const isSelected = selectedCustomizations.some((c) => c.optionId === opt.id)
+                          const isUnavailable = opt.available === false
 
                           return (
                             <button
                               key={opt.id}
+                              disabled={isUnavailable}
                               onClick={() =>
-                                toggleCustomization(
+                                !isUnavailable && toggleCustomization(
                                   {
                                     optionId: opt.id,
                                     sectionId: section.id,
@@ -506,9 +508,11 @@ export default function CustomerMenuPage() {
                                 )
                               }
                               className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                                isSelected
-                                  ? 'border-primary-500 bg-primary-50'
-                                  : 'border-gray-200 hover:bg-gray-50'
+                                isUnavailable
+                                  ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                                  : isSelected
+                                    ? 'border-primary-500 bg-primary-50'
+                                    : 'border-gray-200 hover:bg-gray-50'
                               }`}
                             >
                               <div className="flex items-center gap-2">
@@ -516,10 +520,12 @@ export default function CustomerMenuPage() {
                                   // Checkbox indicator
                                   <span
                                     className={`w-5 h-5 rounded border flex items-center justify-center ${
-                                      isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                                      isUnavailable
+                                        ? 'border-gray-200 bg-gray-100'
+                                        : isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
                                     }`}
                                   >
-                                    {isSelected && (
+                                    {isSelected && !isUnavailable && (
                                       <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                       </svg>
@@ -529,20 +535,29 @@ export default function CustomerMenuPage() {
                                   // Radio indicator
                                   <span
                                     className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                      isSelected ? 'border-primary-600' : 'border-gray-300'
+                                      isUnavailable
+                                        ? 'border-gray-200'
+                                        : isSelected ? 'border-primary-600' : 'border-gray-300'
                                     }`}
                                   >
-                                    {isSelected && (
+                                    {isSelected && !isUnavailable && (
                                       <span className="w-2.5 h-2.5 rounded-full bg-primary-600" />
                                     )}
                                   </span>
                                 )}
-                                <span className="text-sm">{opt.name}</span>
+                                <span className={`text-sm ${isUnavailable ? 'line-through text-gray-400' : ''}`}>
+                                  {opt.name}
+                                </span>
+                                {isUnavailable && (
+                                  <span className="text-xs text-gray-400 ml-1">
+                                    ({t.notAvailable})
+                                  </span>
+                                )}
                               </div>
-                              {Number(opt.price) > 0 && (
+                              {!isUnavailable && Number(opt.price) > 0 && (
                                 <span className="text-sm text-gray-500">+{formatPrice(opt.price)}</span>
                               )}
-                              {Number(opt.price) < 0 && (
+                              {!isUnavailable && Number(opt.price) < 0 && (
                                 <span className="text-sm text-gray-500">{formatPrice(opt.price)}</span>
                               )}
                             </button>

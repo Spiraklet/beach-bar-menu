@@ -26,6 +26,7 @@ export async function GET(
     }
 
     // Fetch visible items (not hidden), including inactive ones to show "Not Available"
+    // Hidden customization options are excluded; unavailable ones are kept (shown greyed out)
     const items = await prisma.item.findMany({
       where: {
         clientId: client.id,
@@ -33,7 +34,12 @@ export async function GET(
       },
       include: {
         customizationSections: {
-          include: { options: { orderBy: { sortOrder: 'asc' } } },
+          include: {
+            options: {
+              where: { hidden: false },
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
           orderBy: { sortOrder: 'asc' },
         },
       },

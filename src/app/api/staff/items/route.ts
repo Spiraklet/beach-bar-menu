@@ -78,7 +78,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { id, active, hidden } = body
+    const { id, active, hidden, optionId, optionAvailable, optionHidden } = body
 
     if (!id) {
       return NextResponse.json(
@@ -90,6 +90,11 @@ export async function PATCH(request: NextRequest) {
     // Verify item belongs to the staff's client
     const item = await prisma.item.findFirst({
       where: { id, clientId: payload.clientId },
+      include: {
+        customizationSections: {
+          include: { options: true },
+        },
+      },
     })
 
     if (!item) {
@@ -99,6 +104,43 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
+    // ─── Option-level update ───
+    if (optionId) {
+      // Verify option belongs to this item
+      const optionBelongsToItem = item.customizationSections.some(
+        (section) => section.options.some((opt) => opt.id === optionId)
+      )
+      if (!optionBelongsToItem) {
+        return NextResponse.json(
+          { success: false, error: 'Option not found for this item' },
+          { status: 404 }
+        )
+      }
+
+      const optionUpdateData: { available?: boolean; hidden?: boolean } = {}
+      if (typeof optionAvailable === 'boolean') optionUpdateData.available = optionAvailable
+      if (typeof optionHidden === 'boolean') optionUpdateData.hidden = optionHidden
+
+      await prisma.customizationOption.update({
+        where: { id: optionId },
+        data: optionUpdateData,
+      })
+
+      // Return the full updated item
+      const updatedItem = await prisma.item.findUnique({
+        where: { id },
+        include: {
+          customizationSections: {
+            include: { options: { orderBy: { sortOrder: 'asc' } } },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      })
+
+      return NextResponse.json({ success: true, data: updatedItem })
+    }
+
+    // ─── Item-level update ───
     const updateData: { active?: boolean; hidden?: boolean } = {}
     if (typeof active === 'boolean') updateData.active = active
     if (typeof hidden === 'boolean') updateData.hidden = hidden

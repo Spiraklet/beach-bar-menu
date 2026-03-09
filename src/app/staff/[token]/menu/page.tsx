@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Toast, ToastType } from '@/components/ui'
 import { formatPrice } from '@/lib/utils'
-import type { Item } from '@/types'
+import type { Item, CustomizationOption } from '@/types'
 
 export default function StaffMenuPage() {
   const params = useParams()
@@ -15,6 +15,7 @@ export default function StaffMenuPage() {
   const [categories, setCategories] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   const fetchItems = useCallback(async () => {
     try {
@@ -47,7 +48,7 @@ export default function StaffMenuPage() {
 
       if (data.success) {
         setItems((prev) =>
-          prev.map((i) => (i.id === item.id ? { ...i, active: !item.active } : i))
+          prev.map((i) => (i.id === item.id ? data.data : i))
         )
         setToast({
           message: `${item.name} marked as ${!item.active ? 'available' : 'unavailable'}`,
@@ -72,7 +73,7 @@ export default function StaffMenuPage() {
 
       if (data.success) {
         setItems((prev) =>
-          prev.map((i) => (i.id === item.id ? { ...i, hidden: !item.hidden } : i))
+          prev.map((i) => (i.id === item.id ? data.data : i))
         )
         setToast({
           message: `${item.name} ${!item.hidden ? 'hidden from' : 'shown on'} menu`,
@@ -80,6 +81,64 @@ export default function StaffMenuPage() {
         })
       } else {
         setToast({ message: 'Failed to update item', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'An error occurred', type: 'error' })
+    }
+  }
+
+  const toggleOptionAvailable = async (item: Item, option: CustomizationOption) => {
+    try {
+      const response = await fetch('/api/staff/items', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id,
+          optionId: option.id,
+          optionAvailable: !option.available,
+        }),
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        setItems((prev) =>
+          prev.map((i) => (i.id === item.id ? data.data : i))
+        )
+        setToast({
+          message: `"${option.name}" marked as ${!option.available ? 'available' : 'unavailable'}`,
+          type: 'success',
+        })
+      } else {
+        setToast({ message: 'Failed to update option', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'An error occurred', type: 'error' })
+    }
+  }
+
+  const toggleOptionHidden = async (item: Item, option: CustomizationOption) => {
+    try {
+      const response = await fetch('/api/staff/items', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id,
+          optionId: option.id,
+          optionHidden: !option.hidden,
+        }),
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        setItems((prev) =>
+          prev.map((i) => (i.id === item.id ? data.data : i))
+        )
+        setToast({
+          message: `"${option.name}" ${!option.hidden ? 'hidden from' : 'shown on'} menu`,
+          type: 'success',
+        })
+      } else {
+        setToast({ message: 'Failed to update option', type: 'error' })
       }
     } catch {
       setToast({ message: 'An error occurred', type: 'error' })
@@ -98,6 +157,22 @@ export default function StaffMenuPage() {
 
   const inactiveCount = items.filter((i) => !i.active).length
   const hiddenCount = items.filter((i) => i.hidden).length
+
+  // Count items that have customizations with issues
+  const getOptionIssueCount = (item: Item) => {
+    if (!item.customizationSections) return 0
+    let count = 0
+    for (const section of item.customizationSections) {
+      for (const option of section.options) {
+        if (!option.available || option.hidden) count++
+      }
+    }
+    return count
+  }
+
+  const hasCustomizations = (item: Item) =>
+    item.customizationSections && item.customizationSections.length > 0 &&
+    item.customizationSections.some(s => s.options.length > 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -178,62 +253,170 @@ export default function StaffMenuPage() {
                       {category}
                     </h2>
                     <div className="space-y-2">
-                      {categoryItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between ${
-                            item.hidden ? 'opacity-50' : ''
-                          }`}
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-medium text-gray-900">{item.name}</h3>
-                              <span className="text-sm text-primary-600 font-medium">
-                                {formatPrice(item.price)}
-                              </span>
+                      {categoryItems.map((item) => {
+                        const isExpanded = expandedItemId === item.id
+                        const optionIssues = getOptionIssueCount(item)
+                        const hasCust = hasCustomizations(item)
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`bg-white rounded-lg border border-gray-200 overflow-hidden ${
+                              item.hidden ? 'opacity-50' : ''
+                            }`}
+                          >
+                            {/* Item Row */}
+                            <div className="p-4 flex items-center justify-between">
+                              <div
+                                className="flex-1 cursor-pointer"
+                                onClick={() => hasCust && setExpandedItemId(isExpanded ? null : item.id)}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-medium text-gray-900">{item.name}</h3>
+                                  <span className="text-sm text-primary-600 font-medium">
+                                    {formatPrice(item.price)}
+                                  </span>
+                                  {hasCust && (
+                                    <span className="text-xs text-gray-400 flex items-center gap-1">
+                                      <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                      </svg>
+                                      {item.customizationSections!.reduce((n, s) => n + s.options.length, 0)} options
+                                    </span>
+                                  )}
+                                  {optionIssues > 0 && (
+                                    <span className="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full">
+                                      {optionIssues} off
+                                    </span>
+                                  )}
+                                </div>
+                                {item.description && (
+                                  <p className="text-sm text-gray-500 mt-1">{item.description}</p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-4 ml-4">
+                                {/* Active Toggle */}
+                                <div className="flex flex-col items-center">
+                                  <span className="text-xs text-gray-500 mb-1">Available</span>
+                                  <button
+                                    onClick={() => toggleActive(item)}
+                                    className={`relative w-12 h-6 rounded-full transition-colors ${
+                                      item.active ? 'bg-green-500' : 'bg-gray-300'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                        item.active ? 'left-7' : 'left-1'
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+
+                                {/* Hidden Toggle */}
+                                <div className="flex flex-col items-center">
+                                  <span className="text-xs text-gray-500 mb-1">Visible</span>
+                                  <button
+                                    onClick={() => toggleHidden(item)}
+                                    className={`relative w-12 h-6 rounded-full transition-colors ${
+                                      !item.hidden ? 'bg-green-500' : 'bg-gray-300'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                        !item.hidden ? 'left-7' : 'left-1'
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-                            {item.description && (
-                              <p className="text-sm text-gray-500 mt-1">{item.description}</p>
+
+                            {/* Expanded Customization Options */}
+                            {isExpanded && hasCust && (
+                              <div className="border-t bg-gray-50 px-4 py-3 space-y-4">
+                                {item.customizationSections!.map((section) => (
+                                  <div key={section.id}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <h4 className="text-sm font-semibold text-gray-700">
+                                        {section.name}
+                                      </h4>
+                                      <span className="text-xs text-gray-400">
+                                        {section.required ? 'Required' : 'Optional'}
+                                        {' • '}
+                                        {section.multiSelect ? 'Multi-select' : 'Single-select'}
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      {section.options.map((option) => (
+                                        <div
+                                          key={option.id}
+                                          className={`flex items-center justify-between py-2 px-3 rounded-md bg-white border ${
+                                            !option.available || option.hidden
+                                              ? 'border-amber-200 bg-amber-50/50'
+                                              : 'border-gray-200'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <span className={`text-sm ${
+                                              !option.available || option.hidden
+                                                ? 'text-gray-400 line-through'
+                                                : 'text-gray-800'
+                                            }`}>
+                                              {option.name}
+                                            </span>
+                                            {Number(option.price) !== 0 && (
+                                              <span className="text-xs text-gray-500">
+                                                {Number(option.price) > 0 ? '+' : ''}{formatPrice(option.price)}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          <div className="flex items-center gap-3">
+                                            {/* Option Available Toggle */}
+                                            <div className="flex flex-col items-center">
+                                              <span className="text-[10px] text-gray-400 mb-0.5">Avail</span>
+                                              <button
+                                                onClick={() => toggleOptionAvailable(item, option)}
+                                                className={`relative w-9 h-5 rounded-full transition-colors ${
+                                                  option.available ? 'bg-green-500' : 'bg-gray-300'
+                                                }`}
+                                              >
+                                                <span
+                                                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                    option.available ? 'left-[18px]' : 'left-0.5'
+                                                  }`}
+                                                />
+                                              </button>
+                                            </div>
+
+                                            {/* Option Visible Toggle */}
+                                            <div className="flex flex-col items-center">
+                                              <span className="text-[10px] text-gray-400 mb-0.5">Show</span>
+                                              <button
+                                                onClick={() => toggleOptionHidden(item, option)}
+                                                className={`relative w-9 h-5 rounded-full transition-colors ${
+                                                  !option.hidden ? 'bg-green-500' : 'bg-gray-300'
+                                                }`}
+                                              >
+                                                <span
+                                                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                    !option.hidden ? 'left-[18px]' : 'left-0.5'
+                                                  }`}
+                                                />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-
-                          <div className="flex items-center gap-4 ml-4">
-                            {/* Active Toggle */}
-                            <div className="flex flex-col items-center">
-                              <span className="text-xs text-gray-500 mb-1">Available</span>
-                              <button
-                                onClick={() => toggleActive(item)}
-                                className={`relative w-12 h-6 rounded-full transition-colors ${
-                                  item.active ? 'bg-green-500' : 'bg-gray-300'
-                                }`}
-                              >
-                                <span
-                                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                    item.active ? 'left-7' : 'left-1'
-                                  }`}
-                                />
-                              </button>
-                            </div>
-
-                            {/* Hidden Toggle */}
-                            <div className="flex flex-col items-center">
-                              <span className="text-xs text-gray-500 mb-1">Visible</span>
-                              <button
-                                onClick={() => toggleHidden(item)}
-                                className={`relative w-12 h-6 rounded-full transition-colors ${
-                                  !item.hidden ? 'bg-green-500' : 'bg-gray-300'
-                                }`}
-                              >
-                                <span
-                                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                    !item.hidden ? 'left-7' : 'left-1'
-                                  }`}
-                                />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 )

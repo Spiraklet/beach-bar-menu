@@ -30,6 +30,56 @@ const nextStatus: Record<OrderStatus, OrderStatus | null> = {
   CANCELLED: null,
 }
 
+// ─── Web Audio notification chime ───
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+
+    // First tone (lower)
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.setValueAtTime(587.33, ctx.currentTime) // D5
+    gain1.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    osc1.start(ctx.currentTime)
+    osc1.stop(ctx.currentTime + 0.15)
+
+    // Second tone (higher)
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.12) // A5
+    gain2.gain.setValueAtTime(0, ctx.currentTime)
+    gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.12)
+    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35)
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    osc2.start(ctx.currentTime + 0.12)
+    osc2.stop(ctx.currentTime + 0.35)
+
+    // Third tone (highest, short)
+    const osc3 = ctx.createOscillator()
+    const gain3 = ctx.createGain()
+    osc3.type = 'sine'
+    osc3.frequency.setValueAtTime(1174.66, ctx.currentTime + 0.28) // D6
+    gain3.gain.setValueAtTime(0, ctx.currentTime)
+    gain3.gain.setValueAtTime(0.25, ctx.currentTime + 0.28)
+    gain3.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
+    osc3.connect(gain3)
+    gain3.connect(ctx.destination)
+    osc3.start(ctx.currentTime + 0.28)
+    osc3.stop(ctx.currentTime + 0.5)
+
+    // Clean up
+    setTimeout(() => ctx.close(), 600)
+  } catch {
+    // AudioContext not available — fail silently
+  }
+}
+
 export default function StaffOrdersPage() {
   const params = useParams()
   const router = useRouter()
@@ -42,9 +92,30 @@ export default function StaffOrdersPage() {
   const [filter, setFilter] = useState<'active' | 'history'>('active')
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
-  const [isNotificationEnabled, setIsNotificationEnabled] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const previousOrderCount = useRef(0)
+  const [headerFlash, setHeaderFlash] = useState(false)
+
+  // Notification state — auto-enabled after first user interaction
+  const [notificationsReady, setNotificationsReady] = useState(false)
+  const previousOrderIdsRef = useRef<Set<string>>(new Set())
+  const isFirstLoadRef = useRef(true)
+
+  // Auto-enable notifications on first user interaction (required by browsers)
+  useEffect(() => {
+    const enableOnInteraction = () => {
+      setNotificationsReady(true)
+      window.removeEventListener('click', enableOnInteraction)
+      window.removeEventListener('touchstart', enableOnInteraction)
+      window.removeEventListener('keydown', enableOnInteraction)
+    }
+    window.addEventListener('click', enableOnInteraction)
+    window.addEventListener('touchstart', enableOnInteraction)
+    window.addEventListener('keydown', enableOnInteraction)
+    return () => {
+      window.removeEventListener('click', enableOnInteraction)
+      window.removeEventListener('touchstart', enableOnInteraction)
+      window.removeEventListener('keydown', enableOnInteraction)
+    }
+  }, [])
 
   // SSE connection for real-time updates
   useEffect(() => {
@@ -54,21 +125,27 @@ export default function StaffOrdersPage() {
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data)
-      const newOrders = data.orders
-      const newRecentCompleted = data.recentCompleted || []
+      const newOrders: Order[] = data.orders
+      const newRecentCompleted: Order[] = data.recentCompleted || []
 
-      // Check for new orders
-      if (
-        isNotificationEnabled &&
-        newOrders.length > previousOrderCount.current &&
-        previousOrderCount.current > 0
-      ) {
-        // Play notification sound
-        audioRef.current?.play()
-        setToast({ message: 'New order received!', type: 'info' })
+      // Detect genuinely new orders (by ID, not just count)
+      const newOrderIds = new Set(newOrders.map(o => o.id))
+      if (!isFirstLoadRef.current && notificationsReady) {
+        const brandNewOrders = newOrders.filter(o => !previousOrderIdsRef.current.has(o.id) && o.status === 'NEW')
+        if (brandNewOrders.length > 0) {
+          playNotificationSound()
+          // Visual flash
+          setHeaderFlash(true)
+          setTimeout(() => setHeaderFlash(false), 1500)
+          setToast({
+            message: `🔔 New order from Table ${brandNewOrders[0].qrCode?.tableIdentifier || '?'}!`,
+            type: 'info',
+          })
+        }
       }
 
-      previousOrderCount.current = newOrders.length
+      previousOrderIdsRef.current = newOrderIds
+      isFirstLoadRef.current = false
       setOrders(newOrders)
       setRecentCompleted(newRecentCompleted)
       setIsLoading(false)
@@ -77,13 +154,12 @@ export default function StaffOrdersPage() {
     eventSource.onerror = () => {
       console.error('SSE connection error')
       eventSource.close()
-      // Possibly redirect to login on auth error
     }
 
     return () => {
       eventSource.close()
     }
-  }, [filter, isNotificationEnabled])
+  }, [filter, notificationsReady])
 
   // Fetch all orders for history view
   const fetchAllOrders = useCallback(async () => {
@@ -146,7 +222,7 @@ export default function StaffOrdersPage() {
       return text
     }).join('\n')
 
-    const text = `Order #${order.orderNumber || 'N/A'}
+    const text = `Order #${order.orderNumber || order.displayCode || 'N/A'}
 Table: ${order.qrCode?.tableIdentifier}
 Time: ${formatDate(order.createdAt)}
 
@@ -163,7 +239,14 @@ Total: ${formatPrice(order.total)}`
     }
   }
 
-  const displayedOrders = filter === 'active' ? orders : allOrders
+  // Helper: short order label (daily sequence or last segment of displayCode)
+  const orderLabel = (order: Order | null) => {
+    if (!order) return ''
+    if (order.dailySequence) return `#${order.dailySequence}`
+    if (order.orderNumber) return `#${order.orderNumber}`
+    if (order.displayCode) return `#${order.displayCode}`
+    return ''
+  }
 
   // Group orders by table for active view
   const groupedByTable = orders.reduce((acc, order) => {
@@ -182,13 +265,6 @@ Total: ${formatPrice(order.total)}`
     return aEarliest - bEarliest
   })
 
-  const enableNotifications = () => {
-    setIsNotificationEnabled(true)
-    // Create audio element for notification sound
-    audioRef.current = new Audio('/notification.mp3')
-    setToast({ message: 'Notifications enabled', type: 'success' })
-  }
-
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push(`/staff/${token}/login`)
@@ -196,18 +272,29 @@ Total: ${formatPrice(order.total)}`
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
+      {/* Header — flashes on new order */}
+      <header
+        className={`shadow-sm sticky top-0 z-40 transition-colors duration-500 ${
+          headerFlash ? 'bg-blue-100' : 'bg-white'
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary-600 flex items-center justify-center">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors duration-500 ${
+              headerFlash ? 'bg-blue-600' : 'bg-primary-600'
+            }`}>
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
             </div>
             <div>
               <h1 className="font-semibold text-gray-900">Staff Portal</h1>
-              <p className="text-sm text-gray-500">Order Management</p>
+              <p className="text-sm text-gray-500">
+                Order Management
+                {notificationsReady && (
+                  <span className="ml-2 text-green-600" title="Sound notifications active">🔔</span>
+                )}
+              </p>
             </div>
           </div>
           <button
@@ -239,6 +326,15 @@ Total: ${formatPrice(order.total)}`
         </div>
       </header>
 
+      {/* Notification hint banner — shown until user interacts */}
+      {!notificationsReady && filter === 'active' && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center">
+          <p className="text-sm text-amber-800">
+            👆 Tap anywhere to enable sound notifications for new orders
+          </p>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto p-4">
         {/* Controls */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -250,11 +346,6 @@ Total: ${formatPrice(order.total)}`
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {!isNotificationEnabled && filter === 'active' && (
-              <Button variant="secondary" size="sm" onClick={enableNotifications}>
-                Enable Notifications
-              </Button>
-            )}
             <div className="flex rounded-lg overflow-hidden border">
               <button
                 onClick={() => setFilter('active')}
@@ -321,8 +412,8 @@ Total: ${formatPrice(order.total)}`
                     >
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">
-                            #{order.orderNumber}
+                          <span className="text-base font-bold text-gray-900">
+                            {orderLabel(order)}
                           </span>
                           <span className={`badge ${statusColors[order.status as OrderStatus]}`}>
                             {statusLabels[order.status as OrderStatus]}
@@ -337,6 +428,11 @@ Total: ${formatPrice(order.total)}`
                         {order.items?.slice(0, 3).map((orderItem) => (
                           <div key={orderItem.id} className="text-sm text-gray-600">
                             {orderItem.quantity}x {orderItem.item?.name}
+                            {orderItem.customizations && Array.isArray(orderItem.customizations) && orderItem.customizations.length > 0 && (
+                              <span className="text-gray-400 ml-1">
+                                ({orderItem.customizations.map((c) => c.name).join(', ')})
+                              </span>
+                            )}
                           </div>
                         ))}
                         {order.items && order.items.length > 3 && (
@@ -386,7 +482,7 @@ Total: ${formatPrice(order.total)}`
                             Table {order.qrCode?.tableIdentifier}
                           </h3>
                           <p className="text-sm text-gray-500">
-                            #{order.orderNumber} • {formatDate(order.createdAt)}
+                            {orderLabel(order)} • {formatDate(order.createdAt)}
                           </p>
                         </div>
                         <span className={`badge ${statusColors[order.status as OrderStatus]}`}>
@@ -435,7 +531,7 @@ Total: ${formatPrice(order.total)}`
                       Table {order.qrCode?.tableIdentifier}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      {order.orderNumber ? `#${order.orderNumber}` : ''} • {formatDate(order.createdAt)}
+                      {orderLabel(order)} • {formatDate(order.createdAt)}
                     </p>
                   </div>
                   <span className={`badge ${statusColors[order.status as OrderStatus]}`}>
@@ -488,7 +584,7 @@ Total: ${formatPrice(order.total)}`
       <Modal
         isOpen={!!selectedOrder}
         onClose={() => setSelectedOrder(null)}
-        title={`Order ${selectedOrder?.orderNumber ? `#${selectedOrder.orderNumber}` : ''} - Table ${selectedOrder?.qrCode?.tableIdentifier}`}
+        title={`Order ${orderLabel(selectedOrder)} — Table ${selectedOrder?.qrCode?.tableIdentifier}`}
         size="md"
       >
         {selectedOrder && (

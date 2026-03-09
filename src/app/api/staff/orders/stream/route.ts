@@ -86,7 +86,10 @@ export async function GET(request: NextRequest) {
           })
 
           if (hasNewOrders || ordersChanged || hasNewCompleted) {
-            const data = `data: ${JSON.stringify({ orders, recentCompleted })}\n\n`
+            // Map displayCode → orderNumber for the frontend
+            const mappedOrders = orders.map(o => ({ ...o, orderNumber: o.displayCode }))
+            const mappedCompleted = recentCompleted.map(o => ({ ...o, orderNumber: o.displayCode }))
+            const data = `data: ${JSON.stringify({ orders: mappedOrders, recentCompleted: mappedCompleted })}\n\n`
             controller.enqueue(encoder.encode(data))
             lastOrderIds = currentOrderIds
             lastCompletedIds = currentCompletedIds
