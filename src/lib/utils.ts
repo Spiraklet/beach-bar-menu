@@ -20,14 +20,6 @@ export function formatDate(date: Date | string): string {
   }).format(d)
 }
 
-export function generateQRUrl(clientId: string, tableId: string): string {
-  return `${process.env.NEXT_PUBLIC_APP_URL}/${clientId}/${tableId}`
-}
-
-export function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
   return array.reduce((groups, item) => {
     const groupKey = String(item[key])
@@ -37,8 +29,4 @@ export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
     groups[groupKey].push(item)
     return groups
   }, {} as Record<string, T[]>)
-}
-
-export function sortByOrder<T extends { sortOrder: number }>(items: T[]): T[] {
-  return [...items].sort((a, b) => a.sortOrder - b.sortOrder)
 }

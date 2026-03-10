@@ -2,35 +2,31 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Input, Toast, ToastType } from '@/components/ui'
+import { Button, Input, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 
 export default function AdminLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/auth/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await response.json()
+      const data = await api.post('/api/auth/admin/login', { email, password })
 
       if (data.success) {
         router.push('/admin/dashboard')
       } else {
-        setToast({ message: data.error || 'Login failed', type: 'error' })
+        showToast(data.error || 'Login failed', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -82,7 +78,7 @@ export default function AdminLoginPage() {
         <Toast
           message={toast.message}
           type={toast.type}
-          onClose={() => setToast(null)}
+          onClose={dismissToast}
         />
       )}
     </div>

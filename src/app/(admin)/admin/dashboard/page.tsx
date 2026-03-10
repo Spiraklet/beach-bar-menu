@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Toast, ToastType } from '@/components/ui'
+import { Button, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 import ClientTable from '@/components/admin/ClientTable'
 import CreateClientModal from '@/components/admin/CreateClientModal'
 
@@ -26,20 +28,19 @@ export default function AdminDashboardPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const fetchClients = useCallback(async () => {
     try {
-      const response = await fetch('/api/admin/clients')
-      const data = await response.json()
+      const data = await api.get('/api/admin/clients')
 
       if (data.success) {
         setClients(data.data)
       } else {
-        setToast({ message: data.error || 'Failed to load clients', type: 'error' })
+        showToast(data.error || 'Failed to load clients', 'error')
       }
     } catch {
-      setToast({ message: 'Failed to load clients', type: 'error' })
+      showToast('Failed to load clients', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -51,10 +52,10 @@ export default function AdminDashboardPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
+      await api.post('/api/auth/logout')
       router.push('/admin/login')
     } catch {
-      setToast({ message: 'Logout failed', type: 'error' })
+      showToast('Logout failed', 'error')
     }
   }
 
@@ -121,7 +122,7 @@ export default function AdminDashboardPage() {
         <Toast
           message={toast.message}
           type={toast.type}
-          onClose={() => setToast(null)}
+          onClose={dismissToast}
         />
       )}
     </div>

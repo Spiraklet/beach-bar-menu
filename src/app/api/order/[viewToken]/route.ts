@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendOrderConfirmation } from '@/lib/email'
+import { apiSuccess, apiError, apiNotFound, apiServerError } from '@/lib/api'
 
 // GET - fetch order by viewToken (no auth needed, token is the credential)
 export async function GET(
@@ -40,19 +41,12 @@ export async function GET(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { success: false, error: 'Order not found' },
-        { status: 404 }
-      )
+      return apiNotFound('Order')
     }
 
-    return NextResponse.json({ success: true, data: order })
+    return apiSuccess(order)
   } catch (error) {
-    console.error('Get order by token error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Get order by token error', error)
   }
 }
 
@@ -67,10 +61,7 @@ export async function POST(
     const { email } = body as { email: string }
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { success: false, error: 'A valid email address is required' },
-        { status: 400 }
-      )
+      return apiError('A valid email address is required')
     }
 
     const order = await prisma.order.findUnique({
@@ -101,10 +92,7 @@ export async function POST(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { success: false, error: 'Order not found' },
-        { status: 404 }
-      )
+      return apiNotFound('Order')
     }
 
     // Save customer email
@@ -116,12 +104,8 @@ export async function POST(
     // Send confirmation email
     await sendOrderConfirmation(email, order)
 
-    return NextResponse.json({ success: true })
+    return apiSuccess()
   } catch (error) {
-    console.error('Send order confirmation error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to send confirmation email' },
-      { status: 500 }
-    )
+    return apiServerError('Send order confirmation error', error)
   }
 }

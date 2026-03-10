@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
+import { apiSuccess, apiError, apiNotFound, apiServerError } from '@/lib/api'
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,10 +8,7 @@ export async function GET(request: NextRequest) {
     const token = searchParams.get('token')
 
     if (!token) {
-      return NextResponse.json(
-        { success: false, error: 'Token is required' },
-        { status: 400 }
-      )
+      return apiError('Token is required')
     }
 
     const staffSettings = await prisma.staffSettings.findUnique({
@@ -25,23 +23,13 @@ export async function GET(request: NextRequest) {
     })
 
     if (!staffSettings) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid token' },
-        { status: 404 }
-      )
+      return apiNotFound('Token')
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        companyName: staffSettings.client.companyName,
-      },
+    return apiSuccess({
+      companyName: staffSettings.client.companyName,
     })
   } catch (error) {
-    console.error('Staff validate error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Staff validate error', error)
   }
 }

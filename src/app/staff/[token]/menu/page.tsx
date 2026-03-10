@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Toast, ToastType } from '@/components/ui'
+import { Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
 import { formatPrice } from '@/lib/utils'
+import { api } from '@/lib/api-client'
 import type { Item, CustomizationOption } from '@/types'
 
 export default function StaffMenuPage() {
@@ -14,13 +16,12 @@ export default function StaffMenuPage() {
   const [items, setItems] = useState<Item[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   const fetchItems = useCallback(async () => {
     try {
-      const response = await fetch('/api/staff/items')
-      const data = await response.json()
+      const data = await api.get('/api/staff/items')
 
       if (data.success) {
         setItems(data.data.items)
@@ -39,114 +40,82 @@ export default function StaffMenuPage() {
 
   const toggleActive = async (item: Item) => {
     try {
-      const response = await fetch('/api/staff/items', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id, active: !item.active }),
-      })
-      const data = await response.json()
+      const data = await api.patch('/api/staff/items', { id: item.id, active: !item.active })
 
       if (data.success) {
         setItems((prev) =>
           prev.map((i) => (i.id === item.id ? data.data : i))
         )
-        setToast({
-          message: `${item.name} marked as ${!item.active ? 'available' : 'unavailable'}`,
-          type: 'success',
-        })
+        showToast(`${item.name} marked as ${!item.active ? 'available' : 'unavailable'}`, 'success')
       } else {
-        setToast({ message: 'Failed to update item', type: 'error' })
+        showToast('Failed to update item', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
   const toggleHidden = async (item: Item) => {
     try {
-      const response = await fetch('/api/staff/items', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id, hidden: !item.hidden }),
-      })
-      const data = await response.json()
+      const data = await api.patch('/api/staff/items', { id: item.id, hidden: !item.hidden })
 
       if (data.success) {
         setItems((prev) =>
           prev.map((i) => (i.id === item.id ? data.data : i))
         )
-        setToast({
-          message: `${item.name} ${!item.hidden ? 'hidden from' : 'shown on'} menu`,
-          type: 'success',
-        })
+        showToast(`${item.name} ${!item.hidden ? 'hidden from' : 'shown on'} menu`, 'success')
       } else {
-        setToast({ message: 'Failed to update item', type: 'error' })
+        showToast('Failed to update item', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
   const toggleOptionAvailable = async (item: Item, option: CustomizationOption) => {
     try {
-      const response = await fetch('/api/staff/items', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: item.id,
-          optionId: option.id,
-          optionAvailable: !option.available,
-        }),
+      const data = await api.patch('/api/staff/items', {
+        id: item.id,
+        optionId: option.id,
+        optionAvailable: !option.available,
       })
-      const data = await response.json()
 
       if (data.success) {
         setItems((prev) =>
           prev.map((i) => (i.id === item.id ? data.data : i))
         )
-        setToast({
-          message: `"${option.name}" marked as ${!option.available ? 'available' : 'unavailable'}`,
-          type: 'success',
-        })
+        showToast(`"${option.name}" marked as ${!option.available ? 'available' : 'unavailable'}`, 'success')
       } else {
-        setToast({ message: 'Failed to update option', type: 'error' })
+        showToast('Failed to update option', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
   const toggleOptionHidden = async (item: Item, option: CustomizationOption) => {
     try {
-      const response = await fetch('/api/staff/items', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: item.id,
-          optionId: option.id,
-          optionHidden: !option.hidden,
-        }),
+      const data = await api.patch('/api/staff/items', {
+        id: item.id,
+        optionId: option.id,
+        optionHidden: !option.hidden,
       })
-      const data = await response.json()
 
       if (data.success) {
         setItems((prev) =>
           prev.map((i) => (i.id === item.id ? data.data : i))
         )
-        setToast({
-          message: `"${option.name}" ${!option.hidden ? 'hidden from' : 'shown on'} menu`,
-          type: 'success',
-        })
+        showToast(`"${option.name}" ${!option.hidden ? 'hidden from' : 'shown on'} menu`, 'success')
       } else {
-        setToast({ message: 'Failed to update option', type: 'error' })
+        showToast('Failed to update option', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await api.post('/api/auth/logout')
     router.push(`/staff/${token}/login`)
   }
 
@@ -426,7 +395,7 @@ export default function StaffMenuPage() {
       </main>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </div>
   )

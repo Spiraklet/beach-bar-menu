@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Modal, Button, Toast, ToastType } from '@/components/ui'
+import { Modal, Button, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 import { type ExtractedItem } from '@/lib/ocr'
 
 interface ScanMenuModalProps {
@@ -21,7 +23,7 @@ export default function ScanMenuModal({
 }: ScanMenuModalProps) {
   const [step, setStep] = useState<Step>('upload')
   const [extractedItems, setExtractedItems] = useState<ExtractedItem[]>([])
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,7 +33,7 @@ export default function ScanMenuModal({
     // Validate file type - only images supported
     const validTypes = ['image/png', 'image/jpeg', 'image/webp']
     if (!validTypes.includes(file.type)) {
-      setToast({ message: 'Please upload a PNG, JPG, or WEBP image.', type: 'error' })
+      showToast('Please upload a PNG, JPG, or WEBP image.', 'error')
       return
     }
 
@@ -42,23 +44,18 @@ export default function ScanMenuModal({
       const formData = new FormData()
       formData.append('image', file)
 
-      const response = await fetch('/api/client/menu-scan', {
-        method: 'POST',
-        body: formData,
-      })
+      const data = await api.post('/api/client/menu-scan', formData)
 
-      const data = await response.json()
-
-      if (!data.success) {
-        setToast({ message: data.error || 'Failed to extract menu items', type: 'error' })
+      if (!data.success || !data.data) {
+        showToast(data.error || 'Failed to extract menu items', 'error')
         setStep('upload')
         return
       }
 
-      const items = data.data as ExtractedItem[]
+      const items = data.data
 
       if (items.length === 0) {
-        setToast({ message: 'No menu items could be extracted. Try a clearer image.', type: 'error' })
+        showToast('No menu items could be extracted. Try a clearer image.', 'error')
         setStep('upload')
         return
       }
@@ -67,7 +64,7 @@ export default function ScanMenuModal({
       setStep('review')
     } catch (error) {
       console.error('Menu scan error:', error)
-      setToast({ message: 'Failed to process image. Please try again.', type: 'error' })
+      showToast('Failed to process image. Please try again.', 'error')
       setStep('upload')
     }
   }
@@ -86,31 +83,25 @@ export default function ScanMenuModal({
 
   const handleImport = async () => {
     if (extractedItems.length === 0) {
-      setToast({ message: 'No items to import', type: 'error' })
+      showToast('No items to import', 'error')
       return
     }
 
     setStep('importing')
 
     try {
-      const response = await fetch('/api/client/items/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: extractedItems }),
-      })
+      const data = await api.post('/api/client/items/bulk', { items: extractedItems })
 
-      const data = await response.json()
-
-      if (data.success) {
-        setToast({ message: `Successfully imported ${data.data.count} items`, type: 'success' })
+      if (data.success && data.data) {
+        showToast(`Successfully imported ${data.data.count} items`, 'success')
         onSuccess()
         handleClose()
       } else {
-        setToast({ message: data.error || 'Failed to import items', type: 'error' })
+        showToast(data.error || 'Failed to import items', 'error')
         setStep('review')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
       setStep('review')
     }
   }
@@ -323,7 +314,7 @@ export default function ScanMenuModal({
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </>
   )

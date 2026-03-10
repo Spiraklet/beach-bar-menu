@@ -5,7 +5,9 @@ import ClientLayout from '@/components/client/ClientLayout'
 import MenuItemForm from '@/components/client/MenuItemForm'
 import MenuPreview from '@/components/client/MenuPreview'
 import ReorderButtons from '@/components/client/ReorderButtons'
-import { Button, Modal, Toast, ToastType } from '@/components/ui'
+import { Button, Modal, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 import { formatPrice } from '@/lib/utils'
 import type { Item } from '@/types'
 
@@ -18,19 +20,18 @@ export default function MenuPage() {
   const [deletingItem, setDeletingItem] = useState<Item | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const fetchItems = useCallback(async () => {
     try {
-      const response = await fetch('/api/client/items')
-      const data = await response.json()
+      const data = await api.get('/api/client/items')
 
       if (data.success) {
         setItems(data.data.items)
         setCategories(data.data.categories)
       }
     } catch {
-      setToast({ message: 'Failed to load menu items', type: 'error' })
+      showToast('Failed to load menu items', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -49,19 +50,16 @@ export default function MenuPage() {
     if (!deletingItem) return
 
     try {
-      const response = await fetch(`/api/client/items?id=${deletingItem.id}`, {
-        method: 'DELETE',
-      })
-      const data = await response.json()
+      const data = await api.delete(`/api/client/items?id=${deletingItem.id}`)
 
       if (data.success) {
-        setToast({ message: 'Item deleted successfully', type: 'success' })
+        showToast('Item deleted successfully', 'success')
         fetchItems()
       } else {
-        setToast({ message: data.error || 'Failed to delete item', type: 'error' })
+        showToast(data.error || 'Failed to delete item', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setDeletingItem(null)
     }
@@ -69,37 +67,27 @@ export default function MenuPage() {
 
   const toggleActive = async (item: Item) => {
     try {
-      const response = await fetch('/api/client/items', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id, active: !item.active }),
-      })
-      const data = await response.json()
+      const data = await api.patch('/api/client/items', { id: item.id, active: !item.active })
 
       if (data.success) {
         fetchItems()
       } else {
-        setToast({ message: 'Failed to update item', type: 'error' })
+        showToast('Failed to update item', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
   // Reorder API call helper
   const reorder = async (type: string, payload: Record<string, unknown>) => {
     try {
-      const response = await fetch('/api/client/items/reorder', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, ...payload }),
-      })
-      const data = await response.json()
+      const data = await api.patch('/api/client/items/reorder', { type, ...payload })
       if (!data.success) {
-        setToast({ message: 'Failed to reorder', type: 'error' })
+        showToast('Failed to reorder', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
@@ -377,7 +365,7 @@ export default function MenuPage() {
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </ClientLayout>
   )

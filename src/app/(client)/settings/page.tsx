@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import ClientLayout from '@/components/client/ClientLayout'
-import { Button, Input, Toast, ToastType } from '@/components/ui'
+import { Button, Input, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 
 interface ClientSettings {
   id: string
@@ -26,7 +28,7 @@ function SettingsContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isConnectingStripe, setIsConnectingStripe] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const [formData, setFormData] = useState({
     companyName: '',
@@ -37,8 +39,7 @@ function SettingsContent() {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const response = await fetch('/api/client/settings')
-      const data = await response.json()
+      const data = await api.get('/api/client/settings')
 
       if (data.success) {
         setSettings(data.data)
@@ -50,7 +51,7 @@ function SettingsContent() {
         })
       }
     } catch {
-      setToast({ message: 'Failed to load settings', type: 'error' })
+      showToast('Failed to load settings', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -62,9 +63,9 @@ function SettingsContent() {
     // Check for Stripe callback
     const stripeStatus = searchParams.get('stripe')
     if (stripeStatus === 'success') {
-      setToast({ message: 'Stripe account connected successfully!', type: 'success' })
+      showToast('Stripe account connected successfully!', 'success')
     } else if (stripeStatus === 'refresh') {
-      setToast({ message: 'Please complete your Stripe account setup', type: 'info' })
+      showToast('Please complete your Stripe account setup', 'info')
     }
   }, [fetchSettings, searchParams])
 
@@ -72,28 +73,22 @@ function SettingsContent() {
     setIsSaving(true)
 
     try {
-      const response = await fetch('/api/client/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await api.patch('/api/client/settings', {
           companyName: formData.companyName,
           contactPerson: formData.contactPerson,
           phone: formData.phone,
           password: formData.password || undefined,
-        }),
-      })
-
-      const data = await response.json()
+        })
 
       if (data.success) {
-        setToast({ message: 'Settings saved successfully', type: 'success' })
+        showToast('Settings saved successfully', 'success')
         setFormData((prev) => ({ ...prev, password: '' }))
         fetchSettings()
       } else {
-        setToast({ message: data.error || 'Failed to save settings', type: 'error' })
+        showToast(data.error || 'Failed to save settings', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -103,21 +98,15 @@ function SettingsContent() {
     setIsConnectingStripe(true)
 
     try {
-      const response = await fetch('/api/client/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'connect' }),
-      })
-
-      const data = await response.json()
+      const data = await api.post('/api/client/settings', { action: 'connect' })
 
       if (data.success && data.data.url) {
         window.location.href = data.data.url
       } else {
-        setToast({ message: data.error || 'Failed to connect Stripe', type: 'error' })
+        showToast(data.error || 'Failed to connect Stripe', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsConnectingStripe(false)
     }
@@ -268,7 +257,7 @@ function SettingsContent() {
       </div>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </>
   )

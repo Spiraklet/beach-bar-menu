@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Button, Input, Modal, Select, Toast, ToastType } from '@/components/ui'
+import { Button, Input, Modal, Select, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 import ReorderButtons from '@/components/client/ReorderButtons'
 import type { Item, SectionInput } from '@/types'
 
@@ -36,7 +38,7 @@ export default function MenuItemForm({
   })
   const [sections, setSections] = useState<SectionFormData[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const [useNewCategory, setUseNewCategory] = useState(false)
 
   useEffect(() => {
@@ -145,7 +147,7 @@ export default function MenuItemForm({
     const category = useNewCategory ? formData.newCategory : formData.category
 
     if (!category) {
-      setToast({ message: 'Please select or enter a category', type: 'error' })
+      showToast('Please select or enter a category', 'error')
       setIsLoading(false)
       return
     }
@@ -176,28 +178,21 @@ export default function MenuItemForm({
     }
 
     try {
-      const response = await fetch('/api/client/items', {
-        method: editItem ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const data = await response.json()
+      const data = editItem
+        ? await api.patch('/api/client/items', payload)
+        : await api.post('/api/client/items', payload)
 
       if (data.success) {
-        setToast({
-          message: editItem ? 'Item updated successfully' : 'Item created successfully',
-          type: 'success',
-        })
+        showToast(editItem ? 'Item updated successfully' : 'Item created successfully', 'success')
         setTimeout(() => {
           onSuccess()
           onClose()
         }, 1000)
       } else {
-        setToast({ message: data.error || 'Failed to save item', type: 'error' })
+        showToast(data.error || 'Failed to save item', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -411,7 +406,7 @@ export default function MenuItemForm({
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </>
   )

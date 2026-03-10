@@ -8,6 +8,7 @@ import {
   recordLoginAttempt,
 } from '@/lib/auth'
 import { logLogin, logLoginFailed, getIpFromRequest } from '@/lib/audit'
+import { apiSuccess, apiError, apiServerError } from '@/lib/api'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,10 +16,7 @@ export async function POST(request: NextRequest) {
     const { token, password } = body
 
     if (!token || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Token and password are required' },
-        { status: 400 }
-      )
+      return apiError('Token and password are required')
     }
 
     // Find staff settings by token
@@ -36,10 +34,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!staffSettings) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid access link' },
-        { status: 401 }
-      )
+      return apiError('Invalid access link', 401)
     }
 
     // Use a unique identifier for rate limiting (staff token)
@@ -48,10 +43,7 @@ export async function POST(request: NextRequest) {
     // Check rate limit with staff-specific config
     const { allowed, remainingAttempts } = await checkRateLimit(rateLimitKey, 'staff')
     if (!allowed) {
-      return NextResponse.json(
-        { success: false, error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
-      )
+      return apiError('Too many login attempts. Please try again later.', 429)
     }
 
     const ipAddress = getIpFromRequest(request.headers)
@@ -88,18 +80,11 @@ export async function POST(request: NextRequest) {
     await setAuthCookie(jwtToken, 'staff')
     await logLogin({ actorType: 'STAFF', actorId: staffSettings.id, actorEmail: staffEmail, clientId: staffSettings.client.id, ipAddress: ipAddress ?? undefined })
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        companyName: staffSettings.client.companyName,
-        staffToken: token,
-      },
+    return apiSuccess({
+      companyName: staffSettings.client.companyName,
+      staffToken: token,
     })
   } catch (error) {
-    console.error('Staff login error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Staff login error', error)
   }
 }

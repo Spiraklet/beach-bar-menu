@@ -1,22 +1,10 @@
-import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
-import { verifyToken } from '@/lib/auth'
+import { withStaffAuth } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
-  const token = request.cookies.get('auth-token-staff')?.value
-
-  if (!token) {
-    return new Response('Unauthorized', { status: 401 })
-  }
-
-  const payload = await verifyToken(token)
-  if (!payload || payload.role !== 'staff' || !payload.clientId) {
-    return new Response('Unauthorized', { status: 401 })
-  }
-
-  const clientId = payload.clientId
+export const GET = withStaffAuth(async (request, payload) => {
+  const clientId = payload.clientId!
 
   const encoder = new TextEncoder()
   let lastOrderIds: string[] = []
@@ -120,4 +108,4 @@ export async function GET(request: NextRequest) {
       Connection: 'keep-alive',
     },
   })
-}
+})

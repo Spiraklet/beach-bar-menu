@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Input, Modal, Toast, ToastType } from '@/components/ui'
+import { Button, Input, Modal, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 
 interface CreateClientModalProps {
   isOpen: boolean
@@ -18,23 +20,17 @@ export default function CreateClientModal({ isOpen, onClose, onSuccess }: Create
     password: '',
   })
   const [isLoading, setIsLoading] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/admin/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      })
+      const data = await api.post('/api/admin/clients', formData)
 
-      const data = await response.json()
-
-      if (data.success) {
-        setToast({ message: `Client created with ID: ${data.data.clientId}`, type: 'success' })
+      if (data.success && data.data) {
+        showToast(`Client created with ID: ${data.data.clientId}`, 'success')
         setFormData({
           companyName: '',
           contactPerson: '',
@@ -47,10 +43,10 @@ export default function CreateClientModal({ isOpen, onClose, onSuccess }: Create
           onClose()
         }, 1500)
       } else {
-        setToast({ message: data.error || 'Failed to create client', type: 'error' })
+        showToast(data.error || 'Failed to create client', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -157,7 +153,7 @@ export default function CreateClientModal({ isOpen, onClose, onSuccess }: Create
         <Toast
           message={toast.message}
           type={toast.type}
-          onClose={() => setToast(null)}
+          onClose={dismissToast}
         />
       )}
     </>

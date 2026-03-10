@@ -2,33 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Button, Modal, Toast, ToastType } from '@/components/ui'
+import { Button, Modal, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
 import { formatPrice, formatDate } from '@/lib/utils'
+import { api } from '@/lib/api-client'
+import { ORDER_STATUS_COLORS as statusColors, ORDER_STATUS_LABELS as statusLabels, NEXT_ORDER_STATUS as nextStatus } from '@/lib/order-status'
 import type { Order, OrderStatus } from '@/types'
-
-const statusColors: Record<OrderStatus, string> = {
-  NEW: 'badge-new',
-  PREPARING: 'badge-preparing',
-  READY: 'badge-ready',
-  COMPLETED: 'badge-completed',
-  CANCELLED: 'badge-cancelled',
-}
-
-const statusLabels: Record<OrderStatus, string> = {
-  NEW: 'New',
-  PREPARING: 'Preparing',
-  READY: 'Ready',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
-}
-
-const nextStatus: Record<OrderStatus, OrderStatus | null> = {
-  NEW: 'PREPARING',
-  PREPARING: 'READY',
-  READY: 'COMPLETED',
-  COMPLETED: null,
-  CANCELLED: null,
-}
 
 // ─── Web Audio notification chime ───
 function playNotificationSound() {
@@ -91,7 +70,7 @@ export default function StaffOrdersPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<'active' | 'history'>('active')
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const [headerFlash, setHeaderFlash] = useState(false)
 
   // Notification state — auto-enabled after first user interaction
@@ -137,10 +116,7 @@ export default function StaffOrdersPage() {
           // Visual flash
           setHeaderFlash(true)
           setTimeout(() => setHeaderFlash(false), 1500)
-          setToast({
-            message: `🔔 New order from Table ${brandNewOrders[0].qrCode?.tableIdentifier || '?'}!`,
-            type: 'info',
-          })
+          showToast(`🔔 New order from Table ${brandNewOrders[0].qrCode?.tableIdentifier || '?'}!`, 'info')
         }
       }
 
@@ -164,8 +140,7 @@ export default function StaffOrdersPage() {
   // Fetch all orders for history view
   const fetchAllOrders = useCallback(async () => {
     try {
-      const response = await fetch('/api/staff/orders')
-      const data = await response.json()
+      const data = await api.get('/api/staff/orders')
 
       if (data.success) {
         setAllOrders(data.data)
@@ -185,16 +160,10 @@ export default function StaffOrdersPage() {
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
     try {
-      const response = await fetch('/api/staff/orders', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: orderId, status }),
-      })
-
-      const data = await response.json()
+      const data = await api.patch('/api/staff/orders', { id: orderId, status })
 
       if (data.success) {
-        setToast({ message: `Order marked as ${statusLabels[status]}`, type: 'success' })
+        showToast(`Order marked as ${statusLabels[status]}`, 'success')
         setSelectedOrder(null)
 
         // Update local state
@@ -206,10 +175,10 @@ export default function StaffOrdersPage() {
           fetchAllOrders()
         }
       } else {
-        setToast({ message: 'Failed to update order', type: 'error' })
+        showToast('Failed to update order', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
@@ -233,9 +202,9 @@ Total: ${formatPrice(order.total)}`
 
     try {
       await navigator.clipboard.writeText(text)
-      setToast({ message: 'Order details copied!', type: 'success' })
+      showToast('Order details copied!', 'success')
     } catch {
-      setToast({ message: 'Failed to copy', type: 'error' })
+      showToast('Failed to copy', 'error')
     }
   }
 
@@ -266,7 +235,7 @@ Total: ${formatPrice(order.total)}`
   })
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await api.post('/api/auth/logout')
     router.push(`/staff/${token}/login`)
   }
 
@@ -666,7 +635,7 @@ Total: ${formatPrice(order.total)}`
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </div>
   )

@@ -123,14 +123,14 @@ export async function getCurrentUser(role: AuthRole): Promise<TokenPayload | nul
 // ============================================================================
 
 /**
- * Admin password policy:
+ * Admin/Client password policy (shared — identical rules):
  * - Minimum 10 characters
  * - At least 1 uppercase letter
  * - At least 1 lowercase letter
  * - At least 1 number
  * - At least 1 special character
  */
-export function validateAdminPassword(password: string): { valid: boolean; errors: string[] } {
+function validatePassword(password: string): { valid: boolean; errors: string[] } {
   const errors: string[] = []
 
   if (password.length < 10) {
@@ -152,35 +152,8 @@ export function validateAdminPassword(password: string): { valid: boolean; error
   return { valid: errors.length === 0, errors }
 }
 
-/**
- * Client password policy:
- * - Minimum 10 characters
- * - At least 1 uppercase letter
- * - At least 1 lowercase letter
- * - At least 1 number
- * - At least 1 special character
- */
-export function validateClientPassword(password: string): { valid: boolean; errors: string[] } {
-  const errors: string[] = []
-
-  if (password.length < 10) {
-    errors.push('Password must be at least 10 characters long')
-  }
-  if (!/[A-Z]/.test(password)) {
-    errors.push('Password must contain at least one uppercase letter')
-  }
-  if (!/[a-z]/.test(password)) {
-    errors.push('Password must contain at least one lowercase letter')
-  }
-  if (!/[0-9]/.test(password)) {
-    errors.push('Password must contain at least one number')
-  }
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-    errors.push('Password must contain at least one special character')
-  }
-
-  return { valid: errors.length === 0, errors }
-}
+export const validateAdminPassword = validatePassword
+export const validateClientPassword = validatePassword
 
 /**
  * Staff password policy (balanced for tablet entry):

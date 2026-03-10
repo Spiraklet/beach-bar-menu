@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import ClientLayout from '@/components/client/ClientLayout'
+import { api } from '@/lib/api-client'
 import { formatPrice } from '@/lib/utils'
 
 interface DashboardStats {
@@ -27,8 +28,7 @@ export default function ClientDashboardPage() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('/api/client/dashboard')
-        const data = await response.json()
+        const data = await api.get('/api/client/dashboard')
 
         if (data.success) {
           setStats(data.data)

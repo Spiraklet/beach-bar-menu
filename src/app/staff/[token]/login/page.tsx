@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Button, Input, Toast, ToastType } from '@/components/ui'
+import { Button, Input, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 
 export default function StaffLoginPage() {
   const params = useParams()
@@ -14,14 +16,13 @@ export default function StaffLoginPage() {
   const [isValidating, setIsValidating] = useState(true)
   const [companyName, setCompanyName] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   // Validate token on mount
   useEffect(() => {
     const validateToken = async () => {
       try {
-        const response = await fetch(`/api/auth/staff/validate?token=${token}`)
-        const data = await response.json()
+        const data = await api.get(`/api/auth/staff/validate?token=${token}`)
 
         if (data.success) {
           setCompanyName(data.data.companyName)
@@ -43,46 +44,34 @@ export default function StaffLoginPage() {
 
     // Staff password: 6+ characters with at least 1 letter and 1 number
     if (password.length < 6) {
-      setToast({ message: 'Password must be at least 6 characters', type: 'error' })
+      showToast('Password must be at least 6 characters', 'error')
       return
     }
     if (!/[a-zA-Z]/.test(password)) {
-      setToast({ message: 'Password must contain at least one letter', type: 'error' })
+      showToast('Password must contain at least one letter', 'error')
       return
     }
     if (!/[0-9]/.test(password)) {
-      setToast({ message: 'Password must contain at least one number', type: 'error' })
+      showToast('Password must contain at least one number', 'error')
       return
     }
 
     setIsLoading(true)
-    setToast(null)
+    dismissToast()
 
     try {
-      const response = await fetch('/api/auth/staff/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
-      })
-
-      const data = await response.json()
+      const data = await api.post('/api/auth/staff/login', { token, password })
 
       if (data.success) {
         router.push(`/staff/${token}/orders`)
       } else {
-        setToast({
-          message: data.error || 'Invalid password',
-          type: 'error',
-        })
+        showToast(data.error || 'Invalid password', 'error')
         if (data.remainingAttempts !== undefined) {
-          setToast({
-            message: `Invalid password. ${data.remainingAttempts} attempts remaining.`,
-            type: 'error',
-          })
+          showToast(`Invalid password. ${data.remainingAttempts} attempts remaining.`, 'error')
         }
       }
     } catch {
-      setToast({ message: 'An error occurred. Please try again.', type: 'error' })
+      showToast('An error occurred. Please try again.', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -162,7 +151,7 @@ export default function StaffLoginPage() {
       </div>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </div>
   )

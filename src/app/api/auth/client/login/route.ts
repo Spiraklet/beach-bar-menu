@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import {
   verifyPassword,
@@ -8,6 +8,7 @@ import {
   recordLoginAttempt,
 } from '@/lib/auth'
 import { logLogin, logLoginFailed, getIpFromRequest } from '@/lib/audit'
+import { apiSuccess, apiError, apiServerError } from '@/lib/api'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,19 +16,13 @@ export async function POST(request: NextRequest) {
     const { email, password } = body
 
     if (!email || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Email and password are required' },
-        { status: 400 }
-      )
+      return apiError('Email and password are required')
     }
 
     // Check rate limit with client-specific config
     const rateLimit = await checkRateLimit(email, 'client')
     if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { success: false, error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
-      )
+      return apiError('Too many login attempts. Please try again later.', 429)
     }
 
     const ipAddress = getIpFromRequest(request.headers)
@@ -40,10 +35,7 @@ export async function POST(request: NextRequest) {
     if (!client) {
       await recordLoginAttempt(email, false)
       await logLoginFailed({ actorType: 'CLIENT', actorEmail: email, ipAddress: ipAddress ?? undefined })
-      return NextResponse.json(
-        { success: false, error: 'Invalid credentials' },
-        { status: 401 }
-      )
+      return apiError('Invalid credentials', 401)
     }
 
     // Verify password
@@ -51,10 +43,7 @@ export async function POST(request: NextRequest) {
     if (!isValid) {
       await recordLoginAttempt(email, false)
       await logLoginFailed({ actorType: 'CLIENT', actorEmail: email, ipAddress: ipAddress ?? undefined })
-      return NextResponse.json(
-        { success: false, error: 'Invalid credentials' },
-        { status: 401 }
-      )
+      return apiError('Invalid credentials', 401)
     }
 
     // Create token and set cookie
@@ -68,19 +57,12 @@ export async function POST(request: NextRequest) {
     await recordLoginAttempt(email, true)
     await logLogin({ actorType: 'CLIENT', actorId: client.id, actorEmail: client.email, clientId: client.id, ipAddress: ipAddress ?? undefined })
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        clientId: client.clientId,
-        companyName: client.companyName,
-        email: client.email,
-      },
+    return apiSuccess({
+      clientId: client.clientId,
+      companyName: client.companyName,
+      email: client.email,
     })
   } catch (error) {
-    console.error('Client login error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Client login error', error)
   }
 }

@@ -1,15 +1,11 @@
-import { NextResponse } from 'next/server'
 import { clearAllAuthCookies } from '@/lib/auth'
+import { apiSuccess, apiServerError } from '@/lib/api'
 
 export async function POST() {
   try {
     await clearAllAuthCookies()
-    return NextResponse.json({ success: true })
+    return apiSuccess()
   } catch (error) {
-    console.error('Logout error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Logout error', error)
   }
 }

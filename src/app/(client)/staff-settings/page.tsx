@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import ClientLayout from '@/components/client/ClientLayout'
-import { Button, Input, Modal, Toast, ToastType } from '@/components/ui'
+import { Button, Input, Modal, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 
 interface StaffSettingsData {
   id: string
@@ -22,19 +24,18 @@ export default function StaffSettingsPage() {
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false)
   const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const [copied, setCopied] = useState(false)
 
   const fetchSettings = async () => {
     try {
-      const response = await fetch('/api/client/staff-settings')
-      const data = await response.json()
+      const data = await api.get('/api/client/staff-settings')
       if (data.success) {
         setSettings(data.data)
       }
     } catch (error) {
       console.error('Failed to fetch staff settings:', error)
-      setToast({ message: 'Failed to load staff settings', type: 'error' })
+      showToast('Failed to load staff settings', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -57,51 +58,45 @@ export default function StaffSettingsPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      setToast({ message: 'Failed to copy to clipboard', type: 'error' })
+      showToast('Failed to copy to clipboard', 'error')
     }
   }
 
   const handleSetup = async () => {
     // Staff password: min 6 chars, at least 1 letter and 1 number
     if (password.length < 6) {
-      setToast({ message: 'Password must be at least 6 characters', type: 'error' })
+      showToast('Password must be at least 6 characters', 'error')
       return
     }
     if (!/[a-zA-Z]/.test(password)) {
-      setToast({ message: 'Password must contain at least one letter', type: 'error' })
+      showToast('Password must contain at least one letter', 'error')
       return
     }
     if (!/[0-9]/.test(password)) {
-      setToast({ message: 'Password must contain at least one number', type: 'error' })
+      showToast('Password must contain at least one number', 'error')
       return
     }
 
     if (password !== confirmPassword) {
-      setToast({ message: 'Passwords do not match', type: 'error' })
+      showToast('Passwords do not match', 'error')
       return
     }
 
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/client/staff-settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      })
-
-      const data = await response.json()
+      const data = await api.post('/api/client/staff-settings', { password })
 
       if (data.success) {
         setSettings(data.data)
         setIsSetupModalOpen(false)
         setPassword('')
         setConfirmPassword('')
-        setToast({ message: 'Staff portal enabled successfully', type: 'success' })
+        showToast('Staff portal enabled successfully', 'success')
       } else {
-        setToast({ message: data.error || 'Failed to enable staff portal', type: 'error' })
+        showToast(data.error || 'Failed to enable staff portal', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -110,44 +105,38 @@ export default function StaffSettingsPage() {
   const handleChangePassword = async () => {
     // Staff password: min 6 chars, at least 1 letter and 1 number
     if (password.length < 6) {
-      setToast({ message: 'Password must be at least 6 characters', type: 'error' })
+      showToast('Password must be at least 6 characters', 'error')
       return
     }
     if (!/[a-zA-Z]/.test(password)) {
-      setToast({ message: 'Password must contain at least one letter', type: 'error' })
+      showToast('Password must contain at least one letter', 'error')
       return
     }
     if (!/[0-9]/.test(password)) {
-      setToast({ message: 'Password must contain at least one number', type: 'error' })
+      showToast('Password must contain at least one number', 'error')
       return
     }
 
     if (password !== confirmPassword) {
-      setToast({ message: 'Passwords do not match', type: 'error' })
+      showToast('Passwords do not match', 'error')
       return
     }
 
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/client/staff-settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      })
-
-      const data = await response.json()
+      const data = await api.patch('/api/client/staff-settings', { password })
 
       if (data.success) {
         setSettings(data.data)
         setIsChangePasswordModalOpen(false)
         setPassword('')
         setConfirmPassword('')
-        setToast({ message: 'Password updated successfully', type: 'success' })
+        showToast('Password updated successfully', 'success')
       } else {
-        setToast({ message: data.error || 'Failed to update password', type: 'error' })
+        showToast(data.error || 'Failed to update password', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -156,23 +145,17 @@ export default function StaffSettingsPage() {
   const handleRegenerateToken = async () => {
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/client/staff-settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ regenerateToken: true }),
-      })
-
-      const data = await response.json()
+      const data = await api.patch('/api/client/staff-settings', { regenerateToken: true })
 
       if (data.success) {
         setSettings(data.data)
         setIsRegenerateModalOpen(false)
-        setToast({ message: 'New URL generated. Share the new link with your staff.', type: 'success' })
+        showToast('New URL generated. Share the new link with your staff.', 'success')
       } else {
-        setToast({ message: data.error || 'Failed to regenerate token', type: 'error' })
+        showToast(data.error || 'Failed to regenerate token', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -181,21 +164,17 @@ export default function StaffSettingsPage() {
   const handleDelete = async () => {
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/client/staff-settings', {
-        method: 'DELETE',
-      })
-
-      const data = await response.json()
+      const data = await api.delete('/api/client/staff-settings')
 
       if (data.success) {
         setSettings(null)
         setIsDeleteModalOpen(false)
-        setToast({ message: 'Staff portal disabled', type: 'success' })
+        showToast('Staff portal disabled', 'success')
       } else {
-        setToast({ message: data.error || 'Failed to disable staff portal', type: 'error' })
+        showToast(data.error || 'Failed to disable staff portal', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -461,7 +440,7 @@ export default function StaffSettingsPage() {
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </ClientLayout>
   )

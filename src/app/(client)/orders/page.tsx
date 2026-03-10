@@ -2,33 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ClientLayout from '@/components/client/ClientLayout'
-import { Button, Modal, Toast, ToastType } from '@/components/ui'
+import { Button, Modal, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
 import { formatPrice, formatDate } from '@/lib/utils'
+import { api } from '@/lib/api-client'
+import { ORDER_STATUS_COLORS as statusColors, ORDER_STATUS_LABELS as statusLabels, NEXT_ORDER_STATUS as nextStatus } from '@/lib/order-status'
 import type { Order, OrderStatus } from '@/types'
-
-const statusColors: Record<OrderStatus, string> = {
-  NEW: 'badge-new',
-  PREPARING: 'badge-preparing',
-  READY: 'badge-ready',
-  COMPLETED: 'badge-completed',
-  CANCELLED: 'badge-cancelled',
-}
-
-const statusLabels: Record<OrderStatus, string> = {
-  NEW: 'New',
-  PREPARING: 'Preparing',
-  READY: 'Ready',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
-}
-
-const nextStatus: Record<OrderStatus, OrderStatus | null> = {
-  NEW: 'PREPARING',
-  PREPARING: 'READY',
-  READY: 'COMPLETED',
-  COMPLETED: null,
-  CANCELLED: null,
-}
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -36,7 +15,7 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<'active' | 'all'>('active')
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const [isNotificationEnabled, setIsNotificationEnabled] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const previousOrderCount = useRef(0)
@@ -59,7 +38,7 @@ export default function OrdersPage() {
       ) {
         // Play notification sound
         audioRef.current?.play()
-        setToast({ message: 'New order received!', type: 'info' })
+        showToast('New order received!', 'info')
       }
 
       previousOrderCount.current = newOrders.length
@@ -80,8 +59,7 @@ export default function OrdersPage() {
   // Fetch all orders for history view
   const fetchAllOrders = useCallback(async () => {
     try {
-      const response = await fetch('/api/orders')
-      const data = await response.json()
+      const data = await api.get('/api/orders')
 
       if (data.success) {
         setAllOrders(data.data)
@@ -101,16 +79,10 @@ export default function OrdersPage() {
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
     try {
-      const response = await fetch('/api/orders', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: orderId, status }),
-      })
-
-      const data = await response.json()
+      const data = await api.patch('/api/orders', { id: orderId, status })
 
       if (data.success) {
-        setToast({ message: `Order marked as ${statusLabels[status]}`, type: 'success' })
+        showToast(`Order marked as ${statusLabels[status]}`, 'success')
         setSelectedOrder(null)
 
         // Update local state
@@ -122,10 +94,10 @@ export default function OrdersPage() {
           fetchAllOrders()
         }
       } else {
-        setToast({ message: 'Failed to update order', type: 'error' })
+        showToast('Failed to update order', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     }
   }
 
@@ -135,7 +107,7 @@ export default function OrdersPage() {
     setIsNotificationEnabled(true)
     // Create audio element for notification sound
     audioRef.current = new Audio('/notification.mp3')
-    setToast({ message: 'Notifications enabled', type: 'success' })
+    showToast('Notifications enabled', 'success')
   }
 
   return (
@@ -336,7 +308,7 @@ export default function OrdersPage() {
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </ClientLayout>
   )

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Modal, Input, Toast, ToastType } from '@/components/ui'
+import { Button, Modal, Input, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 import { formatDate } from '@/lib/utils'
 
 interface Client {
@@ -28,7 +30,7 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
   const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [deletingClient, setDeletingClient] = useState<Client | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const [editForm, setEditForm] = useState({
     companyName: '',
@@ -52,23 +54,17 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/admin/clients', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingClient.id, ...editForm }),
-      })
-
-      const data = await response.json()
+      const data = await api.patch('/api/admin/clients', { id: editingClient.id, ...editForm })
 
       if (data.success) {
-        setToast({ message: 'Client updated successfully', type: 'success' })
+        showToast('Client updated successfully', 'success')
         setEditingClient(null)
         onRefresh()
       } else {
-        setToast({ message: data.error || 'Failed to update client', type: 'error' })
+        showToast(data.error || 'Failed to update client', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -79,21 +75,17 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
     setIsLoading(true)
 
     try {
-      const response = await fetch(`/api/admin/clients?id=${deletingClient.id}`, {
-        method: 'DELETE',
-      })
-
-      const data = await response.json()
+      const data = await api.delete(`/api/admin/clients?id=${deletingClient.id}`)
 
       if (data.success) {
-        setToast({ message: 'Client deleted successfully', type: 'success' })
+        showToast('Client deleted successfully', 'success')
         setDeletingClient(null)
         onRefresh()
       } else {
-        setToast({ message: data.error || 'Failed to delete client', type: 'error' })
+        showToast(data.error || 'Failed to delete client', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -228,7 +220,7 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
         <Toast
           message={toast.message}
           type={toast.type}
-          onClose={() => setToast(null)}
+          onClose={dismissToast}
         />
       )}
     </>

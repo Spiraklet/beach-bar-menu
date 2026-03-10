@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ReactNode, useState } from 'react'
+import { api } from '@/lib/api-client'
 
 interface ClientLayoutProps {
   children: ReactNode
@@ -25,7 +26,7 @@ export default function ClientLayout({ children, companyName }: ClientLayoutProp
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await api.post('/api/auth/logout')
     router.push('/login')
   }
 

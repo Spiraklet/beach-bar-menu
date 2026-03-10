@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken } from '@/lib/auth'
+import { apiUnauthorized } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,12 +9,12 @@ export async function GET(request: NextRequest) {
   const token = request.cookies.get('auth-token-client')?.value
 
   if (!token) {
-    return new Response('Unauthorized', { status: 401 })
+    return apiUnauthorized()
   }
 
   const payload = await verifyToken(token)
   if (!payload || payload.role !== 'client') {
-    return new Response('Unauthorized', { status: 401 })
+    return apiUnauthorized()
   }
 
   const clientId = payload.id

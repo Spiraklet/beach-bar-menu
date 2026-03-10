@@ -1,7 +1,8 @@
 // @refresh reset
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getCurrentUser, generateItemId } from '@/lib/auth'
+import { generateItemId } from '@/lib/auth'
+import { withAuth, apiError, apiNotFound, apiSuccess } from '@/lib/api'
 import type { CreateItemInput, UpdateItemInput } from '@/types'
 
 const SECTIONS_INCLUDE = {
@@ -12,100 +13,121 @@ const SECTIONS_INCLUDE = {
 }
 
 // GET all items for client
-export async function GET() {
-  try {
-    const user = await getCurrentUser('client')
-    if (!user || user.role !== 'client') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+export const GET = withAuth('client', async (_request, user) => {
+  const client = await prisma.client.findUnique({
+    where: { id: user.id },
+  })
 
-    const client = await prisma.client.findUnique({
-      where: { id: user.id },
-    })
-
-    if (!client) {
-      return NextResponse.json(
-        { success: false, error: 'Client not found' },
-        { status: 404 }
-      )
-    }
-
-    const items = await prisma.item.findMany({
-      where: { clientId: client.id },
-      include: SECTIONS_INCLUDE,
-      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-    })
-
-    // Get unique categories in order
-    const categoryOrder = (client.categoryOrder as string[] | null) || []
-    const allCategories = Array.from(new Set(items.map(item => item.category)))
-    // Ordered categories first, then any new ones alphabetically
-    const orderedCategories = [
-      ...categoryOrder.filter(c => allCategories.includes(c)),
-      ...allCategories.filter(c => !categoryOrder.includes(c)).sort(),
-    ]
-
-    return NextResponse.json({
-      success: true,
-      data: { items, categories: orderedCategories, categoryOrder },
-    })
-  } catch (error) {
-    console.error('Get items error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+  if (!client) {
+    return apiNotFound('Client')
   }
-}
+
+  const items = await prisma.item.findMany({
+    where: { clientId: client.id },
+    include: SECTIONS_INCLUDE,
+    orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+  })
+
+  // Get unique categories in order
+  const categoryOrder = (client.categoryOrder as string[] | null) || []
+  const allCategories = Array.from(new Set(items.map(item => item.category)))
+  // Ordered categories first, then any new ones alphabetically
+  const orderedCategories = [
+    ...categoryOrder.filter(c => allCategories.includes(c)),
+    ...allCategories.filter(c => !categoryOrder.includes(c)).sort(),
+  ]
+
+  return apiSuccess({ items, categories: orderedCategories, categoryOrder })
+})
 
 // POST create new item
-export async function POST(request: NextRequest) {
-  try {
-    const user = await getCurrentUser('client')
-    if (!user || user.role !== 'client') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
+export const POST = withAuth('client', async (request: NextRequest, user) => {
+  const client = await prisma.client.findUnique({
+    where: { id: user.id },
+  })
+
+  if (!client) {
+    return apiNotFound('Client')
+  }
+
+  const body: CreateItemInput = await request.json()
+  const { name, price, description, category, sortOrder, customizationSections } = body
+
+  const parsedPrice = Number(price)
+  if (!name || isNaN(parsedPrice) || parsedPrice < 0 || !category) {
+    return apiError('Name, price (>= 0), and category are required')
+  }
+
+  // Generate unique item ID
+  const itemId = await generateItemId(client.id)
+
+  const item = await prisma.item.create({
+    data: {
+      itemId,
+      clientId: client.id,
+      name,
+      price: parsedPrice,
+      description,
+      category,
+      sortOrder: sortOrder ?? 0,
+      customizationSections: customizationSections
+        ? {
+            create: customizationSections.map((section, sIdx) => ({
+              name: section.name,
+              required: section.required,
+              multiSelect: section.multiSelect,
+              sortOrder: sIdx,
+              options: {
+                create: section.options.map((opt, oIdx) => ({
+                  name: opt.name,
+                  price: opt.price,
+                  sortOrder: oIdx,
+                })),
+              },
+            })),
+          }
+        : undefined,
+    },
+    include: SECTIONS_INCLUDE,
+  })
+
+  return apiSuccess(item, 201)
+})
+
+// PATCH update item
+export const PATCH = withAuth('client', async (request: NextRequest, user) => {
+  const body = await request.json()
+  const { id, customizationSections, ...updates }: {
+    id: string
+    customizationSections?: UpdateItemInput['customizationSections']
+  } & Omit<UpdateItemInput, 'customizationSections'> = body
+
+  if (!id) {
+    return apiError('Item ID is required')
+  }
+
+  // Verify item belongs to client
+  const existingItem = await prisma.item.findFirst({
+    where: { id, client: { id: user.id } },
+  })
+
+  if (!existingItem) {
+    return apiNotFound('Item')
+  }
+
+  // Update item and customization sections in a transaction
+  const item = await prisma.$transaction(async (tx) => {
+    // Delete existing sections (cascades to options) if new ones provided
+    if (customizationSections) {
+      await tx.customizationSection.deleteMany({
+        where: { itemId: id },
+      })
     }
 
-    const client = await prisma.client.findUnique({
-      where: { id: user.id },
-    })
-
-    if (!client) {
-      return NextResponse.json(
-        { success: false, error: 'Client not found' },
-        { status: 404 }
-      )
-    }
-
-    const body: CreateItemInput = await request.json()
-    const { name, price, description, category, sortOrder, customizationSections } = body
-
-    const parsedPrice = Number(price)
-    if (!name || isNaN(parsedPrice) || parsedPrice < 0 || !category) {
-      return NextResponse.json(
-        { success: false, error: 'Name, price (≥ 0), and category are required' },
-        { status: 400 }
-      )
-    }
-
-    // Generate unique item ID
-    const itemId = await generateItemId(client.id)
-
-    const item = await prisma.item.create({
+    return tx.item.update({
+      where: { id },
       data: {
-        itemId,
-        clientId: client.id,
-        name,
-        price: parsedPrice,
-        description,
-        category,
-        sortOrder: sortOrder ?? 0,
+        ...updates,
         customizationSections: customizationSections
           ? {
               create: customizationSections.map((section, sIdx) => ({
@@ -126,139 +148,30 @@ export async function POST(request: NextRequest) {
       },
       include: SECTIONS_INCLUDE,
     })
+  })
 
-    return NextResponse.json({ success: true, data: item }, { status: 201 })
-  } catch (error) {
-    console.error('Create item error:', error instanceof Error ? error.message : error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
-
-// PATCH update item
-export async function PATCH(request: NextRequest) {
-  try {
-    const user = await getCurrentUser('client')
-    if (!user || user.role !== 'client') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    const body = await request.json()
-    const { id, customizationSections, ...updates }: {
-      id: string
-      customizationSections?: UpdateItemInput['customizationSections']
-    } & Omit<UpdateItemInput, 'customizationSections'> = body
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: 'Item ID is required' },
-        { status: 400 }
-      )
-    }
-
-    // Verify item belongs to client
-    const existingItem = await prisma.item.findFirst({
-      where: { id, client: { id: user.id } },
-    })
-
-    if (!existingItem) {
-      return NextResponse.json(
-        { success: false, error: 'Item not found' },
-        { status: 404 }
-      )
-    }
-
-    // Update item and customization sections in a transaction
-    const item = await prisma.$transaction(async (tx) => {
-      // Delete existing sections (cascades to options) if new ones provided
-      if (customizationSections) {
-        await tx.customizationSection.deleteMany({
-          where: { itemId: id },
-        })
-      }
-
-      return tx.item.update({
-        where: { id },
-        data: {
-          ...updates,
-          customizationSections: customizationSections
-            ? {
-                create: customizationSections.map((section, sIdx) => ({
-                  name: section.name,
-                  required: section.required,
-                  multiSelect: section.multiSelect,
-                  sortOrder: sIdx,
-                  options: {
-                    create: section.options.map((opt, oIdx) => ({
-                      name: opt.name,
-                      price: opt.price,
-                      sortOrder: oIdx,
-                    })),
-                  },
-                })),
-              }
-            : undefined,
-        },
-        include: SECTIONS_INCLUDE,
-      })
-    })
-
-    return NextResponse.json({ success: true, data: item })
-  } catch (error) {
-    console.error('Update item error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
+  return apiSuccess(item)
+})
 
 // DELETE item
-export async function DELETE(request: NextRequest) {
-  try {
-    const user = await getCurrentUser('client')
-    if (!user || user.role !== 'client') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+export const DELETE = withAuth('client', async (request: NextRequest, user) => {
+  const { searchParams } = new URL(request.url)
+  const id = searchParams.get('id')
 
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: 'Item ID is required' },
-        { status: 400 }
-      )
-    }
-
-    // Verify item belongs to client
-    const item = await prisma.item.findFirst({
-      where: { id, client: { id: user.id } },
-    })
-
-    if (!item) {
-      return NextResponse.json(
-        { success: false, error: 'Item not found' },
-        { status: 404 }
-      )
-    }
-
-    await prisma.item.delete({ where: { id } })
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Delete item error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+  if (!id) {
+    return apiError('Item ID is required')
   }
-}
+
+  // Verify item belongs to client
+  const item = await prisma.item.findFirst({
+    where: { id, client: { id: user.id } },
+  })
+
+  if (!item) {
+    return apiNotFound('Item')
+  }
+
+  await prisma.item.delete({ where: { id } })
+
+  return apiSuccess()
+})

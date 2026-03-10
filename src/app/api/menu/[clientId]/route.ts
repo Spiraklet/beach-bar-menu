@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
+import { apiSuccess, apiNotFound, apiServerError } from '@/lib/api'
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
   try {
@@ -19,10 +20,7 @@ export async function GET(
     })
 
     if (!client) {
-      return NextResponse.json(
-        { success: false, error: 'Restaurant not found' },
-        { status: 404 }
-      )
+      return apiNotFound('Restaurant')
     }
 
     // Fetch visible items (not hidden), including inactive ones to show "Not Available"
@@ -54,23 +52,16 @@ export async function GET(
       ...allCategories.filter((c) => !categoryOrder.includes(c)).sort(),
     ]
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        client: {
-          clientId: client.clientId,
-          name: client.companyName,
-        },
-        items,
-        categories,
-        categoryOrder,
+    return apiSuccess({
+      client: {
+        clientId: client.clientId,
+        name: client.companyName,
       },
+      items,
+      categories,
+      categoryOrder,
     })
   } catch (error) {
-    console.error('Get menu error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Get menu error', error)
   }
 }

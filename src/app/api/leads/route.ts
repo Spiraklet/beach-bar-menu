@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { apiSuccess, apiError, apiServerError } from '@/lib/api'
 
 const leadSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -23,12 +24,11 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true }, { status: 201 })
+    return apiSuccess(undefined, 201)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Invalid data' }, { status: 400 })
+      return apiError('Invalid data')
     }
-    console.error('Lead creation error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return apiServerError('Lead creation error', error)
   }
 }

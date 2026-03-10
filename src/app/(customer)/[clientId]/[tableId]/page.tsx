@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Button, Modal, Toast, ToastType } from '@/components/ui'
+import { Button, Modal, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
 import { formatPrice, groupBy } from '@/lib/utils'
+import { api } from '@/lib/api-client'
 import type { Item, CartItem, SelectedCustomization, CustomizationSection } from '@/types'
 
 type Language = 'en' | 'el'
@@ -103,14 +105,13 @@ export default function CustomerMenuPage() {
   const [orderSuccess, setOrderSuccess] = useState(false)
   const [orderNumber, setOrderNumber] = useState<number | null>(null)
   const [isClearCartModalOpen, setIsClearCartModalOpen] = useState(false)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   const t = translations[lang]
 
   const fetchMenu = useCallback(async () => {
     try {
-      const response = await fetch(`/api/menu/${clientId}`)
-      const data = await response.json()
+      const data = await api.get(`/api/menu/${clientId}`)
 
       if (data.success) {
         setClientName(data.data.client.name)
@@ -209,7 +210,7 @@ export default function CustomerMenuPage() {
 
     setCart((prev) => [...prev, newCartItem])
     setSelectedItem(null)
-    setToast({ message: lang === 'en' ? 'Added to cart' : 'Προστέθηκε στο καλάθι', type: 'success' })
+    showToast(lang === 'en' ? 'Added to cart' : 'Προστέθηκε στο καλάθι', 'success')
   }
 
   const removeFromCart = (index: number) => {
@@ -247,24 +248,18 @@ export default function CustomerMenuPage() {
     setIsSubmitting(true)
 
     try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId,
-          tableId,
-          token,
-          items: cart.map((cartItem) => ({
-            itemId: cartItem.item.id,
-            quantity: cartItem.quantity,
-            customizations: cartItem.selectedCustomizations,
-            note: cartItem.note || undefined,
-          })),
-          customerNote: orderNote || null,
-        }),
+      const data = await api.post('/api/orders', {
+        clientId,
+        tableId,
+        token,
+        items: cart.map((cartItem) => ({
+          itemId: cartItem.item.id,
+          quantity: cartItem.quantity,
+          customizations: cartItem.selectedCustomizations,
+          note: cartItem.note || undefined,
+        })),
+        customerNote: orderNote || null,
       })
-
-      const data = await response.json()
 
       if (data.success) {
         setCart([])
@@ -278,10 +273,10 @@ export default function CustomerMenuPage() {
           setOrderNumber(data.data.orderNumber)
         }
       } else {
-        setToast({ message: data.error || 'Order failed', type: 'error' })
+        showToast(data.error || 'Order failed', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -798,7 +793,7 @@ export default function CustomerMenuPage() {
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </div>
   )

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import ClientLayout from '@/components/client/ClientLayout'
-import { Button, Modal, Input, Toast, ToastType } from '@/components/ui'
+import { Button, Modal, Input, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
+import { api } from '@/lib/api-client'
 
 interface QRCodeData {
   id: string
@@ -18,7 +20,7 @@ export default function QRCodesPage() {
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false)
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
   const [deletingQR, setDeletingQR] = useState<QRCodeData | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
   const [singleTableId, setSingleTableId] = useState('')
   const [batchPrefix, setBatchPrefix] = useState('')
   const [batchStart, setBatchStart] = useState('1')
@@ -28,14 +30,13 @@ export default function QRCodesPage() {
 
   const fetchQRCodes = useCallback(async () => {
     try {
-      const response = await fetch('/api/client/qr-codes')
-      const data = await response.json()
+      const data = await api.get('/api/client/qr-codes')
 
       if (data.success) {
         setQrCodes(data.data)
       }
     } catch {
-      setToast({ message: 'Failed to load QR codes', type: 'error' })
+      showToast('Failed to load QR codes', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -47,29 +48,24 @@ export default function QRCodesPage() {
 
   const handleGenerateSingle = async () => {
     if (!singleTableId.trim()) {
-      setToast({ message: 'Please enter a table ID', type: 'error' })
+      showToast('Please enter a table ID', 'error')
       return
     }
 
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/client/qr-codes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableIdentifiers: [singleTableId.trim()] }),
-      })
-      const data = await response.json()
+      const data = await api.post('/api/client/qr-codes', { tableIdentifiers: [singleTableId.trim()] })
 
       if (data.success) {
-        setToast({ message: 'QR code generated successfully', type: 'success' })
+        showToast('QR code generated successfully', 'success')
         setSingleTableId('')
         setIsGenerateModalOpen(false)
         fetchQRCodes()
       } else {
-        setToast({ message: data.error || 'Failed to generate QR code', type: 'error' })
+        showToast(data.error || 'Failed to generate QR code', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -80,22 +76,22 @@ export default function QRCodesPage() {
     const end = parseInt(batchEnd)
 
     if (isNaN(start) || isNaN(end)) {
-      setToast({ message: 'Start and end must be numbers (e.g. 1 and 15)', type: 'error' })
+      showToast('Start and end must be numbers (e.g. 1 and 15)', 'error')
       return
     }
 
     if (start < 1 || end < 1) {
-      setToast({ message: 'Start and end numbers must be 1 or higher', type: 'error' })
+      showToast('Start and end numbers must be 1 or higher', 'error')
       return
     }
 
     if (start > end) {
-      setToast({ message: 'Start number must be less than or equal to end number', type: 'error' })
+      showToast('Start number must be less than or equal to end number', 'error')
       return
     }
 
     if (end - start >= 100) {
-      setToast({ message: 'Cannot generate more than 100 QR codes at once', type: 'error' })
+      showToast('Cannot generate more than 100 QR codes at once', 'error')
       return
     }
 
@@ -106,25 +102,20 @@ export default function QRCodesPage() {
 
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/client/qr-codes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableIdentifiers }),
-      })
-      const data = await response.json()
+      const data = await api.post('/api/client/qr-codes', { tableIdentifiers })
 
       if (data.success) {
-        setToast({ message: `Generated ${tableIdentifiers.length} QR codes`, type: 'success' })
+        showToast(`Generated ${tableIdentifiers.length} QR codes`, 'success')
         setBatchPrefix('')
         setBatchStart('1')
         setBatchEnd('10')
         setIsBatchModalOpen(false)
         fetchQRCodes()
       } else {
-        setToast({ message: data.error || 'Failed to generate QR codes', type: 'error' })
+        showToast(data.error || 'Failed to generate QR codes', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -134,19 +125,16 @@ export default function QRCodesPage() {
     if (!deletingQR) return
 
     try {
-      const response = await fetch(`/api/client/qr-codes?id=${deletingQR.id}`, {
-        method: 'DELETE',
-      })
-      const data = await response.json()
+      const data = await api.delete(`/api/client/qr-codes?id=${deletingQR.id}`)
 
       if (data.success) {
-        setToast({ message: 'QR code deleted', type: 'success' })
+        showToast('QR code deleted', 'success')
         fetchQRCodes()
       } else {
-        setToast({ message: data.error || 'Failed to delete', type: 'error' })
+        showToast(data.error || 'Failed to delete', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setDeletingQR(null)
     }
@@ -471,7 +459,7 @@ export default function QRCodesPage() {
       </Modal>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </ClientLayout>
   )

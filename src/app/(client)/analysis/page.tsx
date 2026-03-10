@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import ClientLayout from '@/components/client/ClientLayout'
-import { Button, Toast, ToastType } from '@/components/ui'
+import { Button, Toast } from '@/components/ui'
+import { useToast } from '@/hooks'
 import { formatPrice } from '@/lib/utils'
+import { api } from '@/lib/api-client'
 
 interface DailyStat {
   date: string
@@ -22,7 +24,7 @@ export default function AnalysisPage() {
   const [stats, setStats] = useState<DailyStat[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+  const { toast, showToast, dismissToast } = useToast()
 
   // Date range state - default to last 30 days
   const [endDate, setEndDate] = useState(() => {
@@ -39,17 +41,16 @@ export default function AnalysisPage() {
     setIsLoading(true)
     try {
       const params = new URLSearchParams({ startDate, endDate })
-      const response = await fetch(`/api/client/analysis?${params}`)
-      const data = await response.json()
+      const data = await api.get(`/api/client/analysis?${params}`)
 
       if (data.success) {
         setStats(data.data.stats)
         setSummary(data.data.summary)
       } else {
-        setToast({ message: data.error || 'Failed to load analysis', type: 'error' })
+        showToast(data.error || 'Failed to load analysis', 'error')
       }
     } catch {
-      setToast({ message: 'An error occurred', type: 'error' })
+      showToast('An error occurred', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -202,7 +203,7 @@ export default function AnalysisPage() {
       </div>
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast message={toast.message} type={toast.type} onClose={dismissToast} />
       )}
     </ClientLayout>
   )

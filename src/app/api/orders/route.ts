@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { randomBytes } from 'crypto'
 import { prisma } from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth'
+import { withAuth, apiError, apiNotFound, apiSuccess, apiServerError } from '@/lib/api'
+import { VALID_ORDER_STATUSES } from '@/lib/order-status'
 import type { CreateOrderInput } from '@/types'
 
 // Generate daily sequence and display code for a client
@@ -25,58 +26,42 @@ async function generateOrderDisplayCode(clientId: string, clientCode: string, ta
 }
 
 // GET orders (for client dashboard)
-export async function GET(request: NextRequest) {
-  try {
-    const user = await getCurrentUser('client')
-    if (!user || user.role !== 'client') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+export const GET = withAuth('client', async (request: NextRequest, user) => {
+  const { searchParams } = new URL(request.url)
+  const status = searchParams.get('status')
+  const date = searchParams.get('date')
 
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get('status')
-    const date = searchParams.get('date')
+  const whereClause: Record<string, unknown> = { clientId: user.id }
 
-    const whereClause: Record<string, unknown> = { clientId: user.id }
+  if (status && status !== 'all') {
+    whereClause.status = status
+  }
 
-    if (status && status !== 'all') {
-      whereClause.status = status
-    }
+  if (date) {
+    const startDate = new Date(date)
+    startDate.setHours(0, 0, 0, 0)
+    const endDate = new Date(date)
+    endDate.setHours(23, 59, 59, 999)
+    whereClause.createdAt = { gte: startDate, lte: endDate }
+  }
 
-    if (date) {
-      const startDate = new Date(date)
-      startDate.setHours(0, 0, 0, 0)
-      const endDate = new Date(date)
-      endDate.setHours(23, 59, 59, 999)
-      whereClause.createdAt = { gte: startDate, lte: endDate }
-    }
-
-    const orders = await prisma.order.findMany({
-      where: whereClause,
-      include: {
-        qrCode: true,
-        items: {
-          include: {
-            item: true,
-          },
+  const orders = await prisma.order.findMany({
+    where: whereClause,
+    include: {
+      qrCode: true,
+      items: {
+        include: {
+          item: true,
         },
       },
-      orderBy: { createdAt: 'desc' },
-    })
+    },
+    orderBy: { createdAt: 'desc' },
+  })
 
-    return NextResponse.json({ success: true, data: orders })
-  } catch (error) {
-    console.error('Get orders error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
+  return apiSuccess(orders)
+})
 
-// POST create new order (from customer)
+// POST create new order (from customer) — PUBLIC, no auth wrapper
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -89,10 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!clientId || !tableId || !token || !items || items.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Client ID, table ID, security token, and items are required' },
-        { status: 400 }
-      )
+      return apiError('Client ID, table ID, security token, and items are required')
     }
 
     // Find client
@@ -101,10 +83,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!client) {
-      return NextResponse.json(
-        { success: false, error: 'Restaurant not found' },
-        { status: 404 }
-      )
+      return apiNotFound('Restaurant')
     }
 
     // Find QR code
@@ -118,18 +97,12 @@ export async function POST(request: NextRequest) {
     })
 
     if (!qrCode || qrCode.deletedAt) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid table' },
-        { status: 404 }
-      )
+      return apiNotFound('Invalid table')
     }
 
     // Validate security token
     if (qrCode.token !== token) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid or expired QR code' },
-        { status: 403 }
-      )
+      return apiError('Invalid or expired QR code', 403)
     }
 
     // Rate limiting: check orders this hour
@@ -148,17 +121,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (qrCode.ordersThisHour >= MAX_ORDERS_PER_HOUR) {
-      return NextResponse.json(
-        { success: false, error: 'Too many orders from this table. Please wait.' },
-        { status: 429 }
-      )
+      return apiError('Too many orders from this table. Please wait.', 429)
     }
 
     if (qrCode.pendingOrdersCount >= MAX_PENDING_ORDERS) {
-      return NextResponse.json(
-        { success: false, error: 'You have pending orders. Please wait for them to be prepared.' },
-        { status: 429 }
-      )
+      return apiError('You have pending orders. Please wait for them to be prepared.', 429)
     }
 
     // Fetch all items to calculate totals (deduplicate IDs for the query)
@@ -173,10 +140,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (menuItems.length !== uniqueItemIds.length) {
-      return NextResponse.json(
-        { success: false, error: 'Some items are no longer available' },
-        { status: 400 }
-      )
+      return apiError('Some items are no longer available')
     }
 
     // Calculate order total
@@ -249,94 +213,61 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...order,
-        orderNumber: order.displayCode,
-        viewToken, // use the pre-generated variable, never order.viewToken (may be null on old clients)
-      },
-    }, { status: 201 })
+    return apiSuccess({
+      ...order,
+      orderNumber: order.displayCode,
+      viewToken, // use the pre-generated variable, never order.viewToken (may be null on old clients)
+    }, 201)
   } catch (error) {
-    console.error('Create order error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    return apiServerError('Create order error', error)
   }
 }
 
 // PATCH update order status
-export async function PATCH(request: NextRequest) {
-  try {
-    const user = await getCurrentUser('client')
-    if (!user || user.role !== 'client') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+export const PATCH = withAuth('client', async (request: NextRequest, user) => {
+  const body = await request.json()
+  const { id, status } = body
 
-    const body = await request.json()
-    const { id, status } = body
+  if (!id || !status) {
+    return apiError('Order ID and status are required')
+  }
 
-    if (!id || !status) {
-      return NextResponse.json(
-        { success: false, error: 'Order ID and status are required' },
-        { status: 400 }
-      )
-    }
+  if (!VALID_ORDER_STATUSES.includes(status)) {
+    return apiError('Invalid status')
+  }
 
-    const validStatuses = ['NEW', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED']
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid status' },
-        { status: 400 }
-      )
-    }
+  // Verify order belongs to client
+  const order = await prisma.order.findFirst({
+    where: { id, clientId: user.id },
+  })
 
-    // Verify order belongs to client
-    const order = await prisma.order.findFirst({
-      where: { id, clientId: user.id },
-    })
+  if (!order) {
+    return apiNotFound('Order')
+  }
 
-    if (!order) {
-      return NextResponse.json(
-        { success: false, error: 'Order not found' },
-        { status: 404 }
-      )
-    }
-
-    const updatedOrder = await prisma.order.update({
-      where: { id },
-      data: {
-        status,
-        ...(status === 'COMPLETED' ? { doneAt: new Date() } : {}),
-      },
-      include: {
-        qrCode: true,
-        items: {
-          include: {
-            item: true,
-          },
+  const updatedOrder = await prisma.order.update({
+    where: { id },
+    data: {
+      status,
+      ...(status === 'COMPLETED' ? { doneAt: new Date() } : {}),
+    },
+    include: {
+      qrCode: true,
+      items: {
+        include: {
+          item: true,
         },
       },
+    },
+  })
+
+  // Decrement pending order count when order is completed or cancelled
+  if (['COMPLETED', 'CANCELLED'].includes(status)) {
+    await prisma.qRCode.update({
+      where: { id: order.qrCodeId },
+      data: { pendingOrdersCount: { decrement: 1 } },
     })
-
-    // Decrement pending order count when order is completed or cancelled
-    if (['COMPLETED', 'CANCELLED'].includes(status)) {
-      await prisma.qRCode.update({
-        where: { id: order.qrCodeId },
-        data: { pendingOrdersCount: { decrement: 1 } },
-      })
-    }
-
-    return NextResponse.json({ success: true, data: updatedOrder })
-  } catch (error) {
-    console.error('Update order error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
   }
-}
+
+  return apiSuccess(updatedOrder)
+})
